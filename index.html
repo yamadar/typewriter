@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AIR MAIL Typewriter</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="machine">
+    <div class="deck">
+      <div class="lever-col">
+        <button class="lever-btn" id="leverCR" aria-label="キャリッジリターン (CR)"><span class="lever-arm"></span><span class="lever-pivot"></span></button>
+        <span class="ctl-label"><b>CR レバー</b>横戻し<br>Shift+Enter</span>
+      </div>
+      <div class="platen-col">
+        <div class="carriage" id="carriage">
+          <div class="platen"></div>
+          <div class="paper-frame"><canvas id="paper"></canvas></div>
+        </div>
+      </div>
+      <div class="knob-col">
+        <button class="knob-btn" id="knobLF" aria-label="改行ノブ (LF)"><span class="knob" id="knob"></span></button>
+        <span class="ctl-label"><b>改行ノブ</b>縦送り<br>Ctrl+Enter</span>
+      </div>
+    </div>
+
+    <div class="cover">
+      <div class="logo"><span>✈ </span>AIR MAIL</div>
+      <div class="keyboard" id="keyboard"></div>
+    </div>
+  </div>
+
+  <div class="strip">
+    <div class="keys">
+      <kbd>Enter</kbd>CR+LF&nbsp; <kbd>Shift+Enter</kbd>CR&nbsp; <kbd>Ctrl+Enter</kbd>LF&nbsp; <kbd>Shift</kbd>大文字&nbsp; <kbd>Alt</kbd>=FIG.（数字/記号）&nbsp; <kbd>CapsLock</kbd>Shift Lock
+    </div>
+    <div class="status" id="status">行 1 · 桁 1 <span class="bell-dot" id="belldot"></span></div>
+  </div>
+
+  <div class="overlay" id="overlay"><div><b>AIR MAIL</b>クリックして開始（音 ON・キー入力受付）</div></div>
+
+<script src="script.js"></script>
+</body>
+</html>

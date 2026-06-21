@@ -1,0 +1,78 @@
+<svg viewBox="0 0 680 410" xmlns="http://www.w3.org/2000/svg" font-family="'Helvetica Neue',Arial,'Hiragino Sans','Yu Gothic',sans-serif">
+  <defs>
+    <marker id="ar" markerWidth="10" markerHeight="10" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#c0392b"/></marker>
+    <marker id="ard" markerWidth="10" markerHeight="10" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#2b2a26"/></marker>
+  </defs>
+  <rect width="680" height="410" fill="#faf7ef"/>
+  <text x="340" y="30" text-anchor="middle" font-size="18" font-weight="700" fill="#2b2a26">横送り機構（エスケープメント）</text>
+
+  <!-- left-pull arrow + label -->
+  <line x1="300" y1="62" x2="190" y2="62" stroke="#c0392b" stroke-width="2.5" marker-end="url(#ar)"/>
+  <text x="312" y="66" font-size="11" fill="#c0392b">メインスプリングで常に左へ引かれる</text>
+
+  <!-- mainspring anchor (left) -->
+  <rect x="50" y="78" width="8" height="40" fill="#8f948c"/>
+  <path d="M58,98 L70,90 L80,104 L92,90 L104,104 L116,90 L120,98" fill="none" stroke="#8f948c" stroke-width="2"/>
+  <text x="46" y="134" font-size="11" fill="#6b6658">メインスプリング</text>
+
+  <!-- carriage rack -->
+  <rect x="120" y="86" width="440" height="20" rx="3" fill="#e6e8e3" stroke="#8f948c" stroke-width="1.5"/>
+  <g fill="#cfd2cc" stroke="#8f948c" stroke-width="1">
+    <path d="M132,106 L146,106 L139,116 z"/>
+    <path d="M160,106 L174,106 L167,116 z"/>
+    <path d="M188,106 L202,106 L195,116 z"/>
+    <path d="M216,106 L230,106 L223,116 z"/>
+    <path d="M244,106 L258,106 L251,116 z"/>
+    <path d="M272,106 L286,106 L279,116 z"/>
+    <path d="M300,106 L314,106 L307,116 z"/>
+    <path d="M328,106 L342,106 L335,116 z"/>
+    <path d="M356,106 L370,106 L363,116 z"/>
+    <path d="M384,106 L398,106 L391,116 z"/>
+    <path d="M412,106 L426,106 L419,116 z"/>
+    <path d="M440,106 L454,106 L447,116 z"/>
+    <path d="M468,106 L482,106 L475,116 z"/>
+    <path d="M496,106 L510,106 L503,116 z"/>
+    <path d="M524,106 L538,106 L531,116 z"/>
+  </g>
+  <text x="540" y="100" font-size="11" fill="#6b6658">キャリッジ下面のラック</text>
+
+  <!-- escapement star wheel, center (330,190) r=58 -->
+  <circle cx="330" cy="190" r="58" fill="#efe9da" stroke="#8f948c" stroke-width="2"/>
+  <g stroke="#6b6658" stroke-width="3">
+    <line x1="388"   y1="190"   x2="402"   y2="190"/>
+    <line x1="380.2" y1="219"   x2="392.4" y2="226"/>
+    <line x1="359"   y1="240.2" x2="366"   y2="252.4"/>
+    <line x1="330"   y1="248"   x2="330"   y2="262"/>
+    <line x1="301"   y1="240.2" x2="294"   y2="252.4"/>
+    <line x1="279.8" y1="219"   x2="267.6" y2="226"/>
+    <line x1="272"   y1="190"   x2="258"   y2="190"/>
+    <line x1="279.8" y1="161"   x2="267.6" y2="154"/>
+    <line x1="301"   y1="139.8" x2="294"   y2="127.6"/>
+    <line x1="330"   y1="132"   x2="330"   y2="118"/>
+    <line x1="359"   y1="139.8" x2="366"   y2="127.6"/>
+    <line x1="380.2" y1="161"   x2="392.4" y2="154"/>
+  </g>
+  <circle cx="330" cy="190" r="10" fill="#8f948c"/>
+  <text x="330" y="306" text-anchor="middle" font-size="12" fill="#6b6658">エスケープメント星車</text>
+
+  <!-- pawls -->
+  <line x1="250" y1="150" x2="280" y2="166" stroke="#2b2a26" stroke-width="4" stroke-linecap="round"/>
+  <text x="196" y="148" font-size="11" fill="#2b2a26">固定爪</text>
+  <line x1="410" y1="150" x2="382" y2="166" stroke="#2b2a26" stroke-width="4" stroke-linecap="round"/>
+  <text x="416" y="148" font-size="11" fill="#2b2a26">揺動爪</text>
+
+  <!-- link from rocking pawl to universal bar -->
+  <path d="M404,156 C460,210 470,270 452,316" fill="none" stroke="#9a8f6e" stroke-width="2" stroke-dasharray="5 4"/>
+  <text x="468" y="250" font-size="10" fill="#9a8f6e">連動リンク</text>
+
+  <!-- universal bar -->
+  <rect x="150" y="316" width="380" height="18" rx="5" fill="#d9c9a8" stroke="#9a8f6e" stroke-width="1.5"/>
+  <text x="340" y="329" text-anchor="middle" font-size="11" fill="#4a4030">ユニバーサルバー（全タイプバー・スペース共通）</text>
+
+  <!-- kick arrow from typebar -->
+  <line x1="250" y1="378" x2="250" y2="338" stroke="#2b2a26" stroke-width="2.5" marker-end="url(#ard)"/>
+  <text x="120" y="378" font-size="11" fill="#2b2a26">打鍵でここを蹴る</text>
+
+  <!-- caption -->
+  <text x="340" y="402" text-anchor="middle" font-size="12" font-weight="700" fill="#2b2a26">1打鍵 → ユニバーサルバーが爪を動かす → 星車が1歯ぶん解放 → キャリッジが1桁左へ</text>
+</svg>

@@ -1,0 +1,39 @@
+<svg viewBox="0 0 640 380" xmlns="http://www.w3.org/2000/svg" font-family="'Helvetica Neue',Arial,'Hiragino Sans','Yu Gothic',sans-serif">
+  <defs>
+    <marker id="a2" markerWidth="9" markerHeight="9" refX="4.5" refY="4.5" orient="auto-start-reverse"><path d="M0,0 L9,4.5 L0,9 z" fill="#3a6ea5"/></marker>
+    <marker id="a3" markerWidth="10" markerHeight="10" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#2b2a26"/></marker>
+  </defs>
+  <rect width="640" height="380" fill="#faf7ef"/>
+  <text x="320" y="30" text-anchor="middle" font-size="18" font-weight="700" fill="#2b2a26">Shift の原理：活字スラグ上下2文字の選択</text>
+
+  <!-- fixed printing point line -->
+  <line x1="110" y1="205" x2="540" y2="205" stroke="#c0392b" stroke-width="2" stroke-dasharray="6 4"/>
+  <circle cx="135" cy="205" r="5" fill="#c0392b"/>
+  <text x="120" y="226" font-size="12" font-weight="700" fill="#c0392b">印字点 P（固定）</text>
+
+  <!-- rest slug: lower char 'a' aligned to P -->
+  <rect x="225" y="120" width="60" height="100" rx="4" fill="#efe9da" stroke="#8f948c" stroke-width="1.5"/>
+  <line x1="225" y1="170" x2="285" y2="170" stroke="#cfc9b8"/>
+  <text x="255" y="160" text-anchor="middle" font-size="26" font-weight="700" fill="#b9b3a3">A</text>
+  <text x="255" y="208" text-anchor="middle" font-size="26" font-weight="700" fill="#2b2a26">a</text>
+  <text x="255" y="248" text-anchor="middle" font-size="12" fill="#2b2a26">休止：下段 a が P</text>
+
+  <!-- shift slug: upper char 'A' aligned to P (slug moved down 1 pitch) -->
+  <rect x="400" y="170" width="60" height="100" rx="4" fill="#efe9da" stroke="#8f948c" stroke-width="1.5"/>
+  <line x1="400" y1="220" x2="460" y2="220" stroke="#cfc9b8"/>
+  <text x="430" y="210" text-anchor="middle" font-size="26" font-weight="700" fill="#2b2a26">A</text>
+  <text x="430" y="258" text-anchor="middle" font-size="26" font-weight="700" fill="#b9b3a3">a</text>
+  <text x="430" y="298" text-anchor="middle" font-size="12" fill="#2b2a26">Shift：上段 A が P</text>
+
+  <!-- pitch double arrow (A moves 160 -> 210) -->
+  <line x1="505" y1="160" x2="505" y2="210" stroke="#3a6ea5" stroke-width="2" marker-start="url(#a2)" marker-end="url(#a2)"/>
+  <text x="513" y="189" font-size="11" fill="#3a6ea5">1文字ピッチ</text>
+
+  <!-- motion arrow rest -> shift -->
+  <path d="M255,114 C300,92 385,92 430,164" fill="none" stroke="#2b2a26" stroke-width="2" marker-end="url(#a3)"/>
+  <text x="343" y="92" text-anchor="middle" font-size="12" fill="#2b2a26">Shift：活字を1ピッチ移動</text>
+
+  <!-- notes -->
+  <text x="320" y="338" text-anchor="middle" font-size="12" fill="#6b6658">移動するのは活字とプラテンの上下関係のみ。行のベースラインは変わらない。</text>
+  <text x="320" y="358" text-anchor="middle" font-size="12" fill="#6b6658">キャリッジシフト＝キャリッジ全体が動く（旧式）／セグメントシフト＝活字バスケットだけ動く（後期・本実装）</text>
+</svg>
