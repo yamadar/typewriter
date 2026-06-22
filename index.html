@@ -19,31 +19,34 @@
       </div>
       <div class="platen-col">
         <div class="carriage" id="carriage">
-          <div class="platen"></div>
           <div class="paper-frame"><canvas id="paper"></canvas></div>
         </div>
       </div>
       <div class="knob-col">
         <button class="knob-btn" id="knobLF" aria-label="改行ノブ (LF)"><span class="knob" id="knob"></span></button>
         <span class="ctl-label"><b>改行ノブ</b>縦送り<br>Ctrl+Enter</span>
+        <button class="release-btn" id="paperRelease" aria-pressed="false" aria-label="用紙解放レバー（紙を取り出す）"><span class="release-arm"></span><span class="release-pivot"></span></button>
+        <span class="ctl-label"><b>用紙解放</b>引いて取り出す</span>
       </div>
     </div>
 
     <div class="cover">
       <div class="logo"><span>✈ </span>AIR MAIL</div>
       <div class="keyboard" id="keyboard"></div>
+      <canvas class="mech" id="mech" aria-hidden="true"></canvas>
     </div>
   </div>
 
   <div class="strip">
     <div class="keys">
-      <kbd>Enter</kbd>CR+LF&nbsp; <kbd>Shift+Enter</kbd>CR&nbsp; <kbd>Ctrl+Enter</kbd>LF&nbsp; <kbd>Shift</kbd>大文字&nbsp; <kbd>Alt</kbd>=FIG.（数字/記号）&nbsp; <kbd>CapsLock</kbd>Shift Lock
+      <kbd>Enter</kbd>CR+LF&nbsp; <kbd>Shift+Enter</kbd>CR&nbsp; <kbd>Ctrl+Enter</kbd>LF&nbsp; <kbd>Shift</kbd>大文字・記号&nbsp; <kbd>CapsLock</kbd>Shift Lock（全段）&nbsp; <kbd>Backspace</kbd>後退（重ね打ち）
     </div>
     <div class="status" id="status">行 1 · 桁 1 <span class="bell-dot" id="belldot"></span></div>
   </div>
 
   <div class="overlay" id="overlay"><div><b>AIR MAIL</b>クリックして開始（音 ON・キー入力受付）</div></div>
 
+<script src="typewriter-model.js"></script>
 <script src="script.js"></script>
 </body>
 </html>

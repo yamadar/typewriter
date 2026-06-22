@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "typewriter",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-u", "serve.py"],
+      "port": 8123
+    }
+  ]
+}
