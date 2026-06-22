@@ -152,26 +152,74 @@
       const r = el.getBoundingClientRect();
       keyGeo.push({ code, x: r.left + r.width / 2 - mr.left, y: r.top + r.height / 2 - mr.top });
     });
+    // rank left→right so the typebars sit evenly across the fan (no key juts out at the edge)
+    keyGeo.slice().sort((a, b) => a.x - b.x).forEach((k, i) => { k.rank = i; });
   }
   function drawMech() {
     if (!mechW) return;
     ctxM.clearRect(0, 0, mechW, mechH);
-    ctxM.globalAlpha = 1 - relAmt;                           // fade out when the paper is released
+    const vis = 1 - relAmt;                                  // fades out when paper is released
+    ctxM.globalAlpha = vis;
     const now = performance.now();
+    // Folding-fan type basket: silver slugs on the wide outer arc, thin typebars fanning up to a
+    // solid hub (the "fan handle" that seats the bars), all in a fan-shaped opening in the cover.
+    let minKeyY = Infinity;
+    for (const k of keyGeo) if (k.y < minKeyY) minKeyY = k.y;
+    const N = keyGeo.length || 1;
+    const R = Math.max(56, (minKeyY - apexY) * 0.66);       // outer (silver-slug) radius
+    const ri = R * 0.26;                                     // inner radius = the hub
+    const PHI = 54 * Math.PI / 180, A0 = Math.PI / 2 - PHI, A1 = Math.PI / 2 + PHI;
+    const ang = (t) => Math.PI / 2 - PHI * Math.max(-1, Math.min(1, t));
+    const tOf = (k) => N > 1 ? (2 * k.rank / (N - 1) - 1) : 0; // even spread by rank
+    const pt = (a, r) => ({ x: apexX + r * Math.cos(a), y: apexY + r * Math.sin(a) });
+
+    // 0) fan-shaped opening in the cover — the dark machine interior you see through the hole
+    ctxM.beginPath(); ctxM.moveTo(apexX, apexY); ctxM.arc(apexX, apexY, R, A0, A1); ctxM.closePath();
+    const rg = ctxM.createRadialGradient(apexX, apexY, ri * 0.6, apexX, apexY, R);
+    rg.addColorStop(0, "rgba(24,22,18,.92)"); rg.addColorStop(1, "rgba(10,9,7,.96)");
+    ctxM.fillStyle = rg; ctxM.fill();
+    // outer rim where the slugs rest
+    ctxM.strokeStyle = "rgba(150,145,132,.3)"; ctxM.lineWidth = 2;
+    ctxM.beginPath(); ctxM.arc(apexX, apexY, R, A0, A1); ctxM.stroke();
+
+    // 1) key links (behind the keys), rising to each typebar's resting slug
     for (const k of keyGeo) {
-      let f = 0, active = false;
-      if (mechStrike && mechStrike.code === k.code) { const t = (now - mechStrike.t) / 150; if (t < 1) { f = Math.sin(Math.PI * t); active = true; } }
-      ctxM.strokeStyle = active ? "rgba(120,114,102,.7)" : "rgba(70,62,52,.12)";
-      ctxM.lineWidth = active ? 2 : 1;
-      ctxM.beginPath(); ctxM.moveTo(k.x, k.y); ctxM.lineTo(apexX, apexY); ctxM.stroke();
-      if (active) {
-        const sx = k.x + (apexX - k.x) * f, sy = k.y + (apexY - k.y) * f;
-        ctxM.fillStyle = "#3a352e"; ctxM.beginPath(); ctxM.arc(sx, sy, 3.2, 0, Math.PI * 2); ctxM.fill();
-        if (f > 0.8) { ctxM.fillStyle = `rgba(70,64,55,${(f - 0.8) / 0.2 * 0.5})`; ctxM.beginPath(); ctxM.arc(apexX, apexY, 4.5, 0, Math.PI * 2); ctxM.fill(); }
-      }
+      const a = ang(tOf(k)), s = pt(a, R);
+      const on = mechStrike && mechStrike.code === k.code && (now - mechStrike.t) < 170;
+      ctxM.strokeStyle = on ? "rgba(150,144,132,.5)" : "rgba(60,55,48,.1)";
+      ctxM.lineWidth = 1;
+      ctxM.beginPath(); ctxM.moveTo(k.x, k.y); ctxM.lineTo(k.x, s.y + 8); ctxM.lineTo(s.x, s.y); ctxM.stroke();
     }
-    if (mechStrike && now - mechStrike.t > 170) mechStrike = null;
-    ctxM.fillStyle = `rgba(90,86,76,${0.5 * (1 - relAmt)})`; ctxM.beginPath(); ctxM.arc(apexX, apexY, 3.5, 0, Math.PI * 2); ctxM.fill();
+    // 2) typebars (ribs) + resting silver slug heads on the outer arc
+    for (const k of keyGeo) {
+      const a = ang(tOf(k)), inner = pt(a, ri), s = pt(a, R);
+      const on = mechStrike && mechStrike.code === k.code && (now - mechStrike.t) < 170;
+      ctxM.strokeStyle = on ? "rgba(180,175,160,.9)" : "rgba(128,122,107,.5)";
+      ctxM.lineWidth = on ? 2 : 1.1;
+      ctxM.beginPath(); ctxM.moveTo(inner.x, inner.y); ctxM.lineTo(s.x, s.y); ctxM.stroke();
+      if (!on) { ctxM.fillStyle = "#cfd2d4"; ctxM.beginPath(); ctxM.arc(s.x, s.y, 2.1, 0, Math.PI * 2); ctxM.fill(); }
+    }
+    // 3) the HUB (扇子の持ち手) — a solid rounded part the bars seat into, just below the print point
+    const hcY = apexY + 8;
+    ctxM.beginPath(); ctxM.arc(apexX, hcY, ri, 0, Math.PI); ctxM.closePath();
+    const hg = ctxM.createLinearGradient(apexX, hcY - ri, apexX, hcY + ri);
+    hg.addColorStop(0, "rgba(82,77,67,1)"); hg.addColorStop(1, "rgba(26,24,20,1)");
+    ctxM.fillStyle = hg; ctxM.fill();
+    ctxM.strokeStyle = "rgba(205,200,186,.5)"; ctxM.lineWidth = 1.4;
+    ctxM.beginPath(); ctxM.arc(apexX, hcY, ri, 0, Math.PI); ctxM.stroke();
+    // 4) the struck typebar swings its silver head up to the print point
+    if (mechStrike) {
+      const tt = (now - mechStrike.t) / 170;
+      if (tt < 1) {
+        const k = keyGeo.find((g) => g.code === mechStrike.code);
+        if (k) {
+          const a = ang(tOf(k)), f = Math.sin(Math.PI * tt), s = pt(a, R);
+          const x = s.x + (apexX - s.x) * f, y = s.y + (apexY - s.y) * f;
+          ctxM.fillStyle = "#eef1f3"; ctxM.beginPath(); ctxM.arc(x, y, 2.8, 0, Math.PI * 2); ctxM.fill();
+          if (f > 0.82) { ctxM.fillStyle = `rgba(60,55,48,${(f - 0.82) / 0.18 * 0.5})`; ctxM.beginPath(); ctxM.arc(apexX, apexY, 4.5, 0, Math.PI * 2); ctxM.fill(); }
+        }
+      } else mechStrike = null;
+    }
     ctxM.globalAlpha = 1;
   }
 
@@ -249,7 +297,8 @@
   function syncShift() { tw.setShiftHeld(physDown || latch); updateShiftVisual(); }
   function updateShiftVisual() {
     document.body.classList.toggle("shift-on", tw.isShiftActive());
-    const held = physDown || latch;
+    // Shift Lock mechanically holds the Shift keys down, so light them while it is engaged.
+    const held = physDown || latch || tw.isShiftLocked();
     keyMap.get("ShiftLeft").classList.toggle("held", held);
     keyMap.get("ShiftRight").classList.toggle("held", held);
     keyMap.get("CapsLock").classList.toggle("on", tw.isShiftLocked());
