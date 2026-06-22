@@ -32,8 +32,8 @@
     background:linear-gradient(90deg,var(--chrome-3),var(--chrome-1),var(--chrome-3));border-radius:7px;
     transform-origin:50% 100%;transform:translateX(-50%) rotate(-14deg);transition:transform .14s cubic-bezier(.2,.7,.3,1);box-shadow:0 2px 4px rgba(0,0,0,.35)}
   .lever-arm::after{content:"";position:absolute;top:-9px;left:50%;transform:translateX(-50%);width:26px;height:18px;border-radius:9px;background:linear-gradient(180deg,var(--chrome-1),var(--chrome-3));box-shadow:0 2px 3px rgba(0,0,0,.35)}
-  .lever-btn.swing .lever-arm{transform:translateX(-50%) rotate(64deg)}
-  .lever-btn.front .lever-arm{transform:translateX(-50%) rotate(20deg) translateY(10px)}
+  .lever-btn.swing .lever-arm{transform:translateX(-50%) rotate(76deg)}
+  .lever-btn.front .lever-arm{transform:translateX(-50%) rotate(4deg) translateY(22px) scaleY(.9)}
   .lever-pivot{position:absolute;left:50%;bottom:4px;transform:translateX(-50%);width:18px;height:18px;border-radius:50%;background:radial-gradient(circle at 35% 30%,var(--chrome-1),var(--chrome-3))}
   .knob-btn{appearance:none;border:0;background:none;cursor:pointer;padding:6px}
   .knob{width:62px;height:62px;border-radius:50%;background:radial-gradient(circle at 34% 30%,#3a3a36,#191916 70%);box-shadow:0 4px 8px rgba(0,0,0,.4),inset 0 2px 4px rgba(255,255,255,.12);position:relative;transition:transform .16s cubic-bezier(.25,.8,.3,1)}
@@ -64,24 +64,31 @@
   .logo span{color:#3a3a36}
 
   /* キーボード（アンティーク風：黒い円形キー＋白字、縁に金属リングの影） */
-  .keyboard{display:flex;flex-direction:column;gap:8px;align-items:center}
-  .krow{display:flex;gap:7px;justify-content:center;align-items:center}
-  .key{width:46px;height:46px;border-radius:50%;flex:0 0 auto;
+  /* キー径・すき間・余白はビューポート幅に追従（どの幅でもカバー内に収まる） */
+  .keyboard{--k:clamp(25px,5.5vw,46px);--g:clamp(3px,0.85vw,7px);--sm:clamp(4px,1.1vw,13px);
+    display:flex;flex-direction:column;gap:calc(var(--g) + 1px);align-items:center}
+  .krow{display:flex;gap:var(--g);justify-content:center;align-items:center}
+  .key{width:var(--k);height:var(--k);border-radius:50%;flex:0 0 auto;
     background:radial-gradient(circle at 38% 30%,#4a4a48,#222 62%,#0b0b0b);
     color:#f4efe4;
     box-shadow:0 0 0 2px #5a5a57,0 0 0 3px #2a2a28,0 4px 7px rgba(0,0,0,.55),inset 0 1px 2px rgba(255,255,255,.22),inset 0 -3px 6px rgba(0,0,0,.6);
     display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
-    font-family:"Courier Prime","Courier New",monospace;cursor:pointer;user-select:none;-webkit-user-select:none;position:relative;
+    font-family:"Courier Prime","Courier New",monospace;cursor:pointer;user-select:none;-webkit-user-select:none;position:relative;z-index:5;
     transition:transform .05s ease,box-shadow .05s ease}
-  .key b{font-size:16px;font-weight:700;line-height:1;color:#f4efe4}
-  .key .up{font-size:9px;line-height:1;color:#cdc7b7;opacity:.85;transition:opacity .12s,color .12s}
+  .key b{font-size:calc(var(--k)*0.37);font-weight:700;line-height:1;color:#f4efe4}
+  .key .up{font-size:calc(var(--k)*0.2);line-height:1;color:#cdc7b7;opacity:.85;transition:opacity .12s,color .12s}
   .key.pressed{transform:translateY(3px);box-shadow:0 0 0 2px #5a5a57,0 0 0 3px #2a2a28,0 1px 2px rgba(0,0,0,.5),inset 0 1px 2px rgba(255,255,255,.16),inset 0 -2px 5px rgba(0,0,0,.6)}
   /* 修飾キー（円形・小さめ文字） */
-  .key.mod{font-size:9px;letter-spacing:.03em;text-transform:uppercase;text-align:center;line-height:1.05}
-  .key.mod .ic{font-size:16px;line-height:1}
-  .key.back{font-size:14px}
-  /* スペースバー（幅広） */
-  .key.space{width:auto;height:34px;border-radius:18px;flex:1 1 auto;max-width:440px;min-width:200px}
+  .key.mod{font-size:calc(var(--k)*0.2);letter-spacing:.03em;text-transform:uppercase;text-align:center;line-height:1.05}
+  .key.mod .ic{font-size:calc(var(--k)*0.38);line-height:1}
+  .key.back{font-size:calc(var(--k)*0.3)}
+  /* スペースバー（やや控えめの幅） */
+  .key.space{width:clamp(170px,52vw,470px);height:calc(var(--k)*0.74);border-radius:999px;flex:0 0 auto}
+  /* Shift は他キーより少し大きく（力の要る大型キー）、Shift / Shift Lock は隣と離す */
+  .key.shift{width:calc(var(--k) + 6px);height:calc(var(--k) + 6px)}
+  .key.shift-l{margin-right:var(--sm)}
+  .key.shift-r{margin-left:var(--sm)}
+  .key.lock{margin-right:var(--sm)}
   /* 点灯（Shift / Shift Lock）：赤いリングと発光 */
   .key.shift.held,.key.lock.on{color:#ffd9cf;
     box-shadow:0 0 0 2px #c0392b,0 0 0 3px #7a241b,0 4px 8px rgba(0,0,0,.5),0 0 11px rgba(192,57,43,.6),inset 0 1px 2px rgba(255,255,255,.18),inset 0 -3px 6px rgba(0,0,0,.6)}
@@ -89,8 +96,8 @@
   /* Shift ON：数字段キーは上段（記号）を強調し、下段（数字）を控えめに */
   .shift-on .key.dual .up{opacity:1;color:#ff7a63;font-weight:700}
   .shift-on .key.dual b{opacity:.4}
-  /* 機構（キー下のアーム→ハンマー） */
-  .mech{display:block;width:100%;height:96px;margin-top:8px}
+  /* 機構（各キーのアーム→印字点へ収束）：マシン全体に重ねる透明オーバーレイ */
+  .mech{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:4}
 
   /* ステータス */
   .strip{width:min(800px,100%);display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:space-between;font-size:12px;color:var(--label-dim)}
@@ -106,15 +113,8 @@
   .overlay b{display:block;font-size:22px;letter-spacing:.24em;margin-bottom:6px;color:var(--accent)}
   .hide{display:none}
 
+  /* キー寸法は clamp() で流動的に追従するためブレークポイント不要。周辺だけ調整 */
   @media (max-width:640px){
-    .key{width:34px;height:34px}.key b{font-size:14px}.key .up{font-size:8px}
-    .key.mod{font-size:7px}.key.mod .ic{font-size:13px}
-    .key.space{height:30px;min-width:120px}.krow{gap:5px}.mech{height:74px}
     .lever-col,.knob-col{flex-basis:60px}
   }
-  @media (max-width:440px){
-    .key{width:26px;height:26px}.key b{font-size:12px}.key .up{font-size:6px}
-    .key.mod{font-size:6px}.key.mod .ic{font-size:11px}
-    .krow{gap:3px}.key.space{min-width:80px;height:26px}.mech{height:60px}
-  }
-  @media (prefers-reduced-motion:reduce){.lever-arm,.knob,.carriage,.key,.release-arm{transition:none}}
+  @media (prefers-reduced-motion:reduce){.carriage,.key{transition:none}}

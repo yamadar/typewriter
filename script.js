@@ -32,7 +32,6 @@
 
   // ---- render state ----
   const stamps = [];                 // {row,col,ch,jx,jy,a,rot}
-  let strike = null;                 // paper hammer animation {t}
   let mechStrike = null;             // mechanism hammer {code,t}
   let caretVisCol = 0, caretVisRow = 0; // animated carriage position
   let released = false, relAmt = 0;  // paper-release (0 engaged .. 1 detached)
@@ -84,7 +83,6 @@
     ctx.fillStyle = "#c0392b"; ctx.globalAlpha = alpha * 0.9; ctx.fillRect(cx, cy + 4, charW, 2);
     ctx.restore();
     drawPlaten();
-    drawPaperHammer();
     drawPrintGuide();
     ctx.restore();
   }
@@ -101,18 +99,6 @@
     const startX = ((off % sp) + sp) % sp - sp;
     for (let x = startX; x < cssW + sp; x += sp) { ctx.beginPath(); ctx.moveTo(x, top + 5); ctx.lineTo(x, cssH - 5); ctx.stroke(); }
     ctx.restore();
-  }
-
-  function drawPaperHammer() {
-    if (!strike) return;
-    const t = (performance.now() - strike.t) / 120;
-    if (t >= 1) { strike = null; return; }
-    const hit = Math.sin(Math.PI * t);
-    const slugY = printY + (1 - hit) * ((cssH - printY) + 14);
-    ctx.strokeStyle = "#2b2a26"; ctx.lineWidth = 4; ctx.lineCap = "round";
-    ctx.beginPath(); ctx.moveTo(printX, cssH + 14); ctx.lineTo(printX, slugY); ctx.stroke();
-    ctx.fillStyle = "#1c1b17"; rrect(printX - 7, slugY - 7, 14, 11, 3); ctx.fill();
-    if (hit > 0.8) { ctx.fillStyle = `rgba(43,42,38,${(hit - 0.8) / 0.2 * 0.5})`; ctx.beginPath(); ctx.arc(printX, printY - 2, 2.4, 0, Math.PI * 2); ctx.fill(); }
   }
 
   function drawPrintGuide() {
@@ -143,53 +129,50 @@
     ctx.restore(); ctx.restore();
   }
 
-  // ---- mechanism canvas (key -> arm -> hammer, all converging to one strike point) ----
+  // ---- mechanism overlay: each character key's typebar rises to the FIXED print point ----
   const mech = document.getElementById("mech"), ctxM = mech.getContext("2d");
-  let mechW = 0, mechH = 0;
-  const keyGeo = []; // {code, x (center, relative to mech), isChar}
+  let mechW = 0, mechH = 0, apexX = 0, apexY = 0;
+  const keyGeo = []; // {code, x, y} in overlay coords (key top-centre)
   function layoutMech() {
     const dpr = Math.min(devicePixelRatio || 1, 2);
-    mechW = mech.clientWidth || cssW; mechH = mech.clientHeight || 96;
+    const mr = mech.getBoundingClientRect();
+    mechW = mr.width; mechH = mr.height;
     mech.width = Math.round(mechW * dpr); mech.height = Math.round(mechH * dpr);
     ctxM.setTransform(dpr, 0, 0, dpr, 0, 0);
-    measureMech();
+    measureMech(mr);
   }
-  function measureMech() {
-    const mr = mech.getBoundingClientRect(); keyGeo.length = 0;
+  function measureMech(mr) {
+    mr = mr || mech.getBoundingClientRect();
+    const pr = cv.getBoundingClientRect();
+    apexX = pr.left + printX * (pr.width / cssW) - mr.left;  // the paper's print point,
+    apexY = pr.top + printY * (pr.height / cssH) - mr.top;   // mapped into overlay coords
+    keyGeo.length = 0;
     keyMap.forEach((el, code) => {
+      if (!codes.has(code)) return;                          // only printing keys have typebars
       const r = el.getBoundingClientRect();
-      keyGeo.push({ code, x: r.left + r.width / 2 - mr.left, isChar: codes.has(code) });
+      keyGeo.push({ code, x: r.left + r.width / 2 - mr.left, y: r.top + r.height / 2 - mr.top });
     });
   }
   function drawMech() {
     if (!mechW) return;
     ctxM.clearRect(0, 0, mechW, mechH);
-    const apexX = mechW / 2, apexY = mechH - 6, now = performance.now();
+    ctxM.globalAlpha = 1 - relAmt;                           // fade out when the paper is released
+    const now = performance.now();
     for (const k of keyGeo) {
-      if (k.isChar) {
-        let f = 0, active = false;
-        if (mechStrike && mechStrike.code === k.code) {
-          const t = (now - mechStrike.t) / 130;
-          if (t < 1) { f = Math.sin(Math.PI * t); active = true; }
-        }
-        // arm/typebar: faint linkage from the key down to the common strike point
-        ctxM.strokeStyle = active ? "rgba(232,227,214,.9)" : "rgba(206,201,186,.13)";
-        ctxM.lineWidth = active ? 2.4 : 1.1;
-        ctxM.beginPath(); ctxM.moveTo(k.x, 3); ctxM.lineTo(apexX, apexY); ctxM.stroke();
-        // hammer/slug travelling to the strike point on a keystroke
-        if (active) {
-          const sx = k.x + (apexX - k.x) * f, sy = 3 + (apexY - 3) * f;
-          ctxM.fillStyle = "#15140f"; ctxM.beginPath(); ctxM.arc(sx, sy, 3.4, 0, Math.PI * 2); ctxM.fill();
-          if (f > 0.78) { ctxM.fillStyle = `rgba(192,57,43,${(f - 0.78) / 0.22 * 0.8})`; ctxM.beginPath(); ctxM.arc(apexX, apexY, 4.5, 0, Math.PI * 2); ctxM.fill(); }
-        }
-      } else {
-        // modifier keys: short arm stub (no typebar)
-        ctxM.strokeStyle = "rgba(206,201,186,.10)"; ctxM.lineWidth = 1.1;
-        ctxM.beginPath(); ctxM.moveTo(k.x, 3); ctxM.lineTo(k.x, mechH * 0.42); ctxM.stroke();
+      let f = 0, active = false;
+      if (mechStrike && mechStrike.code === k.code) { const t = (now - mechStrike.t) / 150; if (t < 1) { f = Math.sin(Math.PI * t); active = true; } }
+      ctxM.strokeStyle = active ? "rgba(120,114,102,.7)" : "rgba(70,62,52,.12)";
+      ctxM.lineWidth = active ? 2 : 1;
+      ctxM.beginPath(); ctxM.moveTo(k.x, k.y); ctxM.lineTo(apexX, apexY); ctxM.stroke();
+      if (active) {
+        const sx = k.x + (apexX - k.x) * f, sy = k.y + (apexY - k.y) * f;
+        ctxM.fillStyle = "#3a352e"; ctxM.beginPath(); ctxM.arc(sx, sy, 3.2, 0, Math.PI * 2); ctxM.fill();
+        if (f > 0.8) { ctxM.fillStyle = `rgba(70,64,55,${(f - 0.8) / 0.2 * 0.5})`; ctxM.beginPath(); ctxM.arc(apexX, apexY, 4.5, 0, Math.PI * 2); ctxM.fill(); }
       }
     }
-    if (mechStrike && now - mechStrike.t > 150) mechStrike = null;
-    ctxM.fillStyle = "rgba(120,116,104,.5)"; ctxM.beginPath(); ctxM.arc(apexX, apexY, 4, 0, Math.PI * 2); ctxM.fill();
+    if (mechStrike && now - mechStrike.t > 170) mechStrike = null;
+    ctxM.fillStyle = `rgba(90,86,76,${0.5 * (1 - relAmt)})`; ctxM.beginPath(); ctxM.arc(apexX, apexY, 3.5, 0, Math.PI * 2); ctxM.fill();
+    ctxM.globalAlpha = 1;
   }
 
   function frame() {
@@ -214,8 +197,8 @@
   }
   const SPECIAL = {
     CapsLock: { cls: "mod lock", html: "SHIFT<br>LOCK" },
-    ShiftLeft: { cls: "mod shift", html: '<span class="ic">⇧</span>' },
-    ShiftRight: { cls: "mod shift", html: '<span class="ic">⇧</span>' },
+    ShiftLeft: { cls: "mod shift shift-l", html: '<span class="ic">⇧</span>' },
+    ShiftRight: { cls: "mod shift shift-r", html: '<span class="ic">⇧</span>' },
     Backspace: { cls: "mod back", html: "◂◂" },
     Space: { cls: "space", html: "" },
   };
@@ -245,7 +228,6 @@
       jx: (Math.random() - .5) * 1.4, jy: (Math.random() - .5) * 1.4,
       a: .78 + Math.random() * .22, rot: (Math.random() - .5) * .03,
     });
-    strike = { t: performance.now() };
   }
   function emitChar(code) {
     const res = tw.pressKey(code);
@@ -347,9 +329,10 @@
     releaseEl.setAttribute("aria-pressed", String(released));
     sndRelease();
   });
-  function swingLever() { if (reduce) return; leverEl.classList.add("swing"); setTimeout(() => leverEl.classList.remove("swing"), 160); }
-  function leverFront() { if (reduce) return; leverEl.classList.add("front"); setTimeout(() => leverEl.classList.remove("front"), 170); }
-  function spinKnob() { if (reduce) return; knobAngle += 52; knobEl.style.transform = `rotate(${knobAngle}deg)`; }
+  // Brief, user-triggered mechanism feedback — kept even under reduced-motion (it's the point of a typewriter).
+  function swingLever() { leverEl.classList.remove("front"); leverEl.classList.add("swing"); setTimeout(() => leverEl.classList.remove("swing"), 240); }
+  function leverFront() { leverEl.classList.remove("swing"); leverEl.classList.add("front"); setTimeout(() => leverEl.classList.remove("front"), 240); }
+  function spinKnob() { knobAngle += 52; knobEl.style.transform = `rotate(${knobAngle}deg)`; }
 
   // ---- status ----
   const statusEl = document.getElementById("status"), bellDot = document.getElementById("belldot");
@@ -374,7 +357,13 @@
   const sndKey = () => burst({ dur: .03, freq: 2400, q: .8, gain: .45, decay: .05 });
   const sndBack = () => burst({ dur: .03, freq: 1500, q: 1, gain: .3, decay: .05 });
   const sndLock = () => burst({ dur: .02, freq: 900, q: 2, gain: .25, decay: .03 });
-  const sndBell = () => { tone({ freq: 1050, dur: .22, gain: .22 }); tone({ freq: 1560, dur: .18, gain: .12 }); };
+  // margin bell — a bright resonant "chee-riin"
+  const sndBell = () => {
+    burst({ dur: .012, freq: 5200, q: 1, type: "highpass", gain: .22, decay: .02 }); // clapper tap
+    tone({ freq: 1190, dur: .6, gain: .3 });
+    tone({ freq: 1790, dur: .5, gain: .15 });
+    tone({ freq: 2660, dur: .34, gain: .07 });
+  };
   function sndCR() { burst({ dur: .16, freq: 600, q: .5, type: "lowpass", gain: .3, decay: .18 }); setTimeout(() => burst({ dur: .04, freq: 1200, q: 1, gain: .4, decay: .06 }), 130); }
   function sndLF() { burst({ dur: .025, freq: 1800, q: 1.5, gain: .35, decay: .03 }); setTimeout(() => burst({ dur: .025, freq: 1400, q: 1.5, gain: .28, decay: .03 }), 55); }
   function sndShift() { burst({ dur: .05, freq: 360, q: .6, type: "lowpass", gain: .4, decay: .07 }); setTimeout(() => burst({ dur: .03, freq: 1600, q: 1.4, gain: .32, decay: .04 }), 32); }
