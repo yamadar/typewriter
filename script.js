@@ -20,9 +20,9 @@
   const codes = new Set(LAYOUT.rows.flat().map((k) => k.code));
 
   // ---- paper geometry (the paper is a wide sheet drawn at 1 CSS px = 1 unit) ----
-  const FS = 17, ROWH = Math.round(FS * 1.5), GAP = 8, VIS_ROWS = 5;   // realistic: only a few lines on the platen front
-  const BACK_H = 14, ROLLER_MIN = 26, TOP_MARGIN = 26;                 // platen scene: back-paper band / min roller / sheet top margin
-  const FONT = `${FS}px "Courier Prime","Courier New",monospace`;
+  let FS = 16, ROWH = Math.round(FS * 1.5), FONT = `${FS}px "Courier Prime","Courier New",monospace`;  // font scales to fit the machine width
+  const GAP = 8, VIS_ROWS = 5;                                         // realistic: only a few lines on the platen front
+  const BACK_H = 14, ROLLER_MIN = 26, TOP_MARGIN = 26, OVER = 18, FRAME = 14;   // platen scene + machine frame each side of the roller
   // equal margins on both sides of the text; the print point stays at the deck centre
   let charW = FS * 0.6, padL = 48, padR = 48, pageW = 0, pageH = 0, curH = 0, printLineY = 0, platenTopY = 0;
 
@@ -31,11 +31,13 @@
   let fanStrike = null;              // which typebar is striking {i,t}
   let caretVisCol = 0, caretVisY = 0;   // eased carriage column and vertical scroll (px)
   let colTarget = 0, stepGen = 0;    // carriage steps to colTarget AFTER the hammer strikes (escapement)
+  let busy = false, crAnim = null;   // during a carriage return the carriage slides ~1s and input is blocked
   let released = false, relAmt = 0;
   let lineHeight = 1.5;              // LF spacing factor: 1.0 single / 1.5 / 2.0 double
   let inkColor = "43,42,38";        // ribbon ink (r,g,b): black by default
   const rowTop = [0];                // cumulative top px per row (depends on the line-height at each LF)
-  const STEP_DELAY = 100;           // ms after a keystrike before the paper steps one character (≈ strike contact)
+  const STRIKE_MS = 150;            // duration of the type-bar strike (snappy flick); contact ≈ STRIKE_MS/2
+  const STEP_DELAY = 80;            // ms after a keystrike before the paper steps one char — right after the head presses
 
   // ---- view-side input modality (model owns the actual shift state) ----
   let physDown = false, latch = false;
@@ -65,9 +67,13 @@
 
   // ---- paper canvas layout ----
   function layout() {
+    const deckW = deck.clientWidth || 700;
+    pageW = Math.max(320, deckW - 2 * FRAME);                            // roller / canvas ≈ machine width (frame each side)
+    FS = Math.max(11, Math.min(19, Math.round((pageW - 2 * OVER - 56) / COLS / 0.6)));  // scale the font so COLS columns fit
+    ROWH = Math.round(FS * 1.5);
+    FONT = `${FS}px "Courier Prime","Courier New",monospace`;
     ctx.font = FONT; charW = ctx.measureText("M").width || FS * 0.6;
-    padL = 48; padR = 48;        // equal margins both sides; positionCarriage keeps col0 at the deck centre
-    pageW = Math.round(padL + COLS * charW + padR);
+    padL = padR = Math.round((pageW - COLS * charW) / 2);                // centre the text block on the sheet
     printLineY = BACK_H + ROLLER_MIN + 10 + (VIS_ROWS - 1) * ROWH + FS;   // front window sits below the platen roller
     platenTopY = printLineY + 4;
     pageH = printLineY + 18;                                              // room for the bail / descenders below the print line
@@ -86,8 +92,13 @@
   function drawPaper() {
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cv.width, cv.height); ctx.restore();
     ctx.font = FONT;
-    ctx.fillStyle = "#f3ecdb"; ctx.fillRect(0, 0, pageW, curH);                 // the sheet (full current height)
-    ctx.fillStyle = "rgba(0,0,0,.05)"; ctx.fillRect(0, 0, pageW, 6);             // faint top edge
+    if (relAmt < 1 && curH === pageH) {                                          // typing: the platen is wider than the sheet
+      ctx.fillStyle = "#1b1a17"; ctx.fillRect(0, 0, pageW, curH);                //   dark platen / carriage behind
+      ctx.fillStyle = "#f3ecdb"; ctx.fillRect(OVER, 0, pageW - 2 * OVER, curH);  //   the sheet, inset (narrower than the platen)
+    } else {                                                                     // released: the full page
+      ctx.fillStyle = "#f3ecdb"; ctx.fillRect(0, 0, pageW, curH);
+      ctx.fillStyle = "rgba(0,0,0,.05)"; ctx.fillRect(0, 0, pageW, 6);
+    }
     const clipBottom = platenTopY + (curH - platenTopY) * relAmt;              // released: reveal the whole page
     ctx.save(); ctx.beginPath(); ctx.rect(0, 0, pageW, clipBottom); ctx.clip();
     for (const s of stamps) {
@@ -102,7 +113,30 @@
     }
     ctx.restore();
     // platen scene (black roller / back of fed sheet / top edge / paper bail) — typing view only; fades on release
-    if (relAmt < 1 && curH === pageH) drawPlaten(1 - relAmt);
+    if (relAmt < 1 && curH === pageH) { drawPlaten(1 - relAmt); drawStrike(); }
+  }
+  // strike at the print point (drawn on the paper, overlapping it): ribbon apex + guide金具 + slug head on the arm
+  function drawStrike() {
+    const px = colToX(caretVisCol), now = performance.now();         // print point (tracks the carriage → stays centred)
+    const f = (fanStrike && now - fanStrike.t < STRIKE_MS) ? Math.sin(Math.PI * (now - fanStrike.t) / STRIKE_MS) : 0;
+    // ribbon apex: the top of the ribbon, held by the guide — narrow trapezoid at rest, pulled to a point on a strike
+    const topW = 16 * (1 - f), apY = (printLineY + 3) - 7 * f;
+    ctx.fillStyle = `rgb(${inkColor})`;
+    ctx.beginPath(); ctx.moveTo(px - 13, pageH); ctx.lineTo(px - topW / 2, apY); ctx.lineTo(px + topW / 2, apY); ctx.lineTo(px + 13, pageH); ctx.closePath(); ctx.fill();
+    // ribbon guide (金具): chrome prongs flanking the print point, overlapping the paper
+    ctx.lineCap = "round"; ctx.strokeStyle = "rgba(158,161,160,.92)"; ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.moveTo(px - 9, printLineY - FS + 2); ctx.lineTo(px - 9, printLineY + 9);
+    ctx.moveTo(px + 9, printLineY - FS + 2); ctx.lineTo(px + 9, printLineY + 9);
+    ctx.stroke(); ctx.lineCap = "butt";
+    // strike: a slender type-slug head (two glyphs on its face) rises to cover the print position; an arm-stem joins it to the basket
+    if (f <= 0.02) return;
+    const sw = charW + 3, sh = Math.round(FS * 1.9), sy = printLineY + 8 - (sh + 8) * f;
+    ctx.fillStyle = "#33332d"; ctx.fillRect(px - 2.5, sy + sh - 6, 5, Math.max(0, pageH - (sy + sh - 6)));   // arm / type-bar
+    const g = ctx.createLinearGradient(px - sw / 2, 0, px + sw / 2, 0);
+    g.addColorStop(0, "#14140e"); g.addColorStop(.5, "#42423a"); g.addColorStop(1, "#14140e");
+    ctx.fillStyle = g; rrect(ctx, px - sw / 2, sy, sw, sh, 2); ctx.fill();
+    ctx.strokeStyle = "rgba(210,213,210,.6)"; ctx.lineWidth = 1; rrect(ctx, px - sw / 2, sy, sw, sh, 2); ctx.stroke();
   }
   // the paper wrapped on the platen: black roller behind, the fed sheet's back face above it, the sheet's top edge, the paper bail
   function drawPlaten(al) {
@@ -112,24 +146,25 @@
     // (a) black platen roller (cylinder): from under the back-sheet down to the sheet's top edge
     const rg = ctx.createLinearGradient(0, BACK_H, 0, rollerBottom);
     rg.addColorStop(0, "#15140f"); rg.addColorStop(.42, "#34322b"); rg.addColorStop(.52, "#3e3c34"); rg.addColorStop(.62, "#2a2823"); rg.addColorStop(1, "#121109");
-    ctx.fillStyle = rg; ctx.fillRect(0, BACK_H, pageW, rollerBottom - BACK_H);
-    // (b) back of the fed sheet, standing up behind the roller
+    ctx.fillStyle = rg; ctx.fillRect(0, BACK_H, pageW, rollerBottom - BACK_H);    // full width — the roller is wider than the sheet
+    const pw = pageW - 2 * OVER;                                                  // sheet width (inset from the platen)
+    // (b) back of the fed sheet, standing up behind the roller (sheet-width, narrower than the platen)
     const bg = ctx.createLinearGradient(0, 0, 0, BACK_H);
     bg.addColorStop(0, "#cdc4ae"); bg.addColorStop(1, "#ded5bf");
-    ctx.fillStyle = bg; ctx.fillRect(0, 0, pageW, BACK_H);
-    ctx.fillStyle = "rgba(0,0,0,.30)"; ctx.fillRect(0, BACK_H - 1, pageW, 1);                              // shadow into the roller
+    ctx.fillStyle = bg; ctx.fillRect(OVER, 0, pw, BACK_H);
+    ctx.fillStyle = "rgba(0,0,0,.30)"; ctx.fillRect(OVER, BACK_H - 1, pw, 1);                              // shadow into the roller
     // (c) the sheet's top edge (only while it is still on the front of the platen)
     if (topEdgeY >= rollerBottom - 0.5 && topEdgeY < pageH) {
-      ctx.fillStyle = "rgba(0,0,0,.22)"; ctx.fillRect(0, topEdgeY, pageW, 2);
-      ctx.fillStyle = "rgba(255,255,255,.55)"; ctx.fillRect(0, topEdgeY + 2, pageW, 1);
+      ctx.fillStyle = "rgba(0,0,0,.22)"; ctx.fillRect(OVER, topEdgeY, pw, 2);
+      ctx.fillStyle = "rgba(255,255,255,.55)"; ctx.fillRect(OVER, topEdgeY + 2, pw, 1);
     }
     // (d) paper bail: a thin chrome bar with rubber rollers, holding the sheet just above the print line
     const bailY = printLineY - 15;
     const cgr = ctx.createLinearGradient(0, bailY - 2, 0, bailY + 2);
     cgr.addColorStop(0, "rgba(228,231,227,.92)"); cgr.addColorStop(.5, "rgba(150,154,150,.92)"); cgr.addColorStop(1, "rgba(118,122,118,.92)");
-    ctx.fillStyle = cgr; rrect(ctx, 6, bailY - 2, pageW - 12, 4, 2); ctx.fill();
+    ctx.fillStyle = cgr; rrect(ctx, OVER + 4, bailY - 2, pw - 8, 4, 2); ctx.fill();
     for (let k = 0; k < 3; k++) {
-      const bx = pageW * (0.2 + 0.3 * k);
+      const bx = OVER + pw * (0.2 + 0.3 * k);
       ctx.fillStyle = "#1b1b18"; rrect(ctx, bx - 9, bailY - 4, 18, 8, 4); ctx.fill();
       ctx.fillStyle = "rgba(255,255,255,.16)"; ctx.fillRect(bx - 7, bailY - 3, 14, 1);
     }
@@ -163,66 +198,99 @@
     const R = lidH - 16, ri = R * 0.22;              // big folding fan (lid raised ~1.5x in CSS)
     const PHI = 75 * Math.PI / 180, A0 = Math.PI / 2 - PHI, A1 = Math.PI / 2 + PHI;   // ~150° spread
     const now = performance.now();
-    const STRIKE_MS = 200;
     const struck = (fanStrike && now - fanStrike.t < STRIKE_MS) ? fanStrike.i : -1;
     const aOf = (i) => Math.PI / 2 - PHI * (fanN > 1 ? (2 * i / (fanN - 1) - 1) : 0);
     const pt = (a, r) => ({ x: apexX + r * Math.cos(a), y: apexY + r * Math.sin(a) });
 
-    // fan-shaped hole (dark machine interior seen through the lid)
-    ctxL.beginPath(); ctxL.moveTo(apexX, apexY); ctxL.arc(apexX, apexY, R, A0, A1); ctxL.closePath();
-    const rg = ctxL.createRadialGradient(apexX, apexY, ri, apexX, apexY, R);
-    rg.addColorStop(0, "rgba(26,24,20,.96)"); rg.addColorStop(1, "rgba(8,7,5,.99)");
-    ctxL.fillStyle = rg; ctxL.fill();
-    ctxL.strokeStyle = "rgba(255,255,255,.07)"; ctxL.lineWidth = 2;
-    ctxL.beginPath(); ctxL.arc(apexX, apexY, R, A0, A1); ctxL.stroke();
+    // ===== layered cover: ① the red .lid background is the COVER, with a scallop-shell hole punched in it =====
+    // through the hole, from back to front: ③ black base → ② silver typebars + chrome segment + inked ribbon.
+    // everything is CLIPPED to the hole, so the parts of the mechanism/ribbon behind the cover are not drawn.
+    const SC = 14, amp = R * 0.045;                                          // scalloped rim (shell edge)
+    const edgeR = (t) => R - amp + amp * Math.cos(2 * Math.PI * SC * t);
+    const shell = new Path2D(); shell.moveTo(apexX, apexY);
+    for (let k = 0; k <= 140; k++) { const t = k / 140, a = A0 + (A1 - A0) * t, p = pt(a, edgeR(t)); shell.lineTo(p.x, p.y); }
+    shell.closePath();
 
-    // typebars + resting silver slug heads on the outer arc (the struck arm is drawn swinging, below)
+    ctxL.save();
+    ctxL.clip(shell);
+
+    // ③ black base — the dark machine interior behind the basket
+    ctxL.fillStyle = "#000"; ctxL.fillRect(0, 0, lidW, lidH);
+    const rg = ctxL.createRadialGradient(apexX, apexY + R * 0.12, ri * 0.4, apexX, apexY, R * 1.04);
+    rg.addColorStop(0, "#211f19"); rg.addColorStop(.62, "#0b0a07"); rg.addColorStop(1, "#000");
+    ctxL.fillStyle = rg; ctxL.fillRect(0, 0, lidW, lidH);
+
+    // ② silver typebars — the fan of arms radiating from the segment out to the shell rim
     for (let i = 0; i < fanN; i++) {
       if (i === struck) continue;
-      const a = aOf(i), inner = pt(a, ri), s = pt(a, R);
-      ctxL.strokeStyle = "rgba(150,144,128,.55)"; ctxL.lineWidth = 1.2;
-      ctxL.beginPath(); ctxL.moveTo(inner.x, inner.y); ctxL.lineTo(s.x, s.y); ctxL.stroke();
-      ctxL.fillStyle = "#d2d5d7"; ctxL.beginPath(); ctxL.arc(s.x, s.y, 2.7, 0, Math.PI * 2); ctxL.fill();
+      const a = aOf(i), inner = pt(a, ri), tip = pt(a, R + amp + 3);
+      const g = ctxL.createLinearGradient(inner.x, inner.y, tip.x, tip.y);
+      g.addColorStop(0, "#70767a"); g.addColorStop(.5, "#ced2d4"); g.addColorStop(1, "#9ca1a3");
+      ctxL.strokeStyle = g; ctxL.lineWidth = 2; ctxL.lineCap = "round";
+      ctxL.beginPath(); ctxL.moveTo(inner.x, inner.y); ctxL.lineTo(tip.x, tip.y); ctxL.stroke();
+      const head = pt(a, R - amp - 1);                                      // silver slug head (incl. head = silver), just inside the rim
+      ctxL.fillStyle = "#e7eaeb"; ctxL.beginPath(); ctxL.arc(head.x, head.y, 2.8, 0, Math.PI * 2); ctxL.fill();
     }
-    // hub (the fan handle) that seats the typebars, at the print point
+
+    // ② chrome segment / hub that seats the typebars at the print point
     const hcY = apexY + 5;
-    ctxL.beginPath(); ctxL.arc(apexX, hcY, ri, 0, Math.PI); ctxL.closePath();
     const hg = ctxL.createLinearGradient(apexX, hcY - ri, apexX, hcY + ri);
-    hg.addColorStop(0, "rgba(86,81,70,1)"); hg.addColorStop(1, "rgba(28,26,22,1)");
-    ctxL.fillStyle = hg; ctxL.fill();
-    ctxL.strokeStyle = "rgba(210,205,190,.55)"; ctxL.lineWidth = 1.4;
+    hg.addColorStop(0, "#d4d7d9"); hg.addColorStop(.5, "#9a9ea0"); hg.addColorStop(1, "#54585a");
+    ctxL.fillStyle = hg; ctxL.beginPath(); ctxL.arc(apexX, hcY, ri, 0, Math.PI); ctxL.closePath(); ctxL.fill();
+    ctxL.strokeStyle = "rgba(245,247,248,.5)"; ctxL.lineWidth = 1.2;
     ctxL.beginPath(); ctxL.arc(apexX, hcY, ri, 0, Math.PI); ctxL.stroke();
-    // struck typebar: the whole arm swings up from its rest angle to the print point (bright, clearly visible)
+
+    // ② inked ribbon — crosses the upper basket, the vibrator peaking at the print point; the ends run off under the cover (clipped)
+    {
+      const ribY = apexY + 34, pkY = apexY + 7, tx = 12, hw = lidW;
+      ctxL.lineJoin = "round"; ctxL.lineCap = "round";
+      ctxL.strokeStyle = `rgb(${inkColor})`; ctxL.lineWidth = 7;
+      ctxL.beginPath();
+      ctxL.moveTo(apexX - hw, ribY); ctxL.lineTo(apexX - 48, ribY);
+      ctxL.lineTo(apexX - tx, pkY); ctxL.lineTo(apexX + tx, pkY);
+      ctxL.lineTo(apexX + 48, ribY); ctxL.lineTo(apexX + hw, ribY);
+      ctxL.stroke();
+      ctxL.strokeStyle = "rgba(255,255,255,.13)"; ctxL.lineWidth = 1.5;       // ribbon top edge sheen
+      ctxL.beginPath();
+      ctxL.moveTo(apexX - hw, ribY - 1.7); ctxL.lineTo(apexX - 48, ribY - 1.7);
+      ctxL.lineTo(apexX - tx, pkY - 1.7); ctxL.lineTo(apexX + tx, pkY - 1.7);
+      ctxL.lineTo(apexX + 48, ribY - 1.7); ctxL.lineTo(apexX + hw, ribY - 1.7);
+      ctxL.stroke();
+    }
+
+    // ② struck typebar — the whole silver arm swings up from its rest angle to the print point (over the ribbon)
     if (struck >= 0) {
       const tt = (now - fanStrike.t) / STRIKE_MS;
       if (tt < 1) {
         const aRest = aOf(struck), f = Math.sin(Math.PI * tt);
         const rest = pt(aRest, R), inner = pt(aRest, ri);
         const sx = rest.x + (apexX - rest.x) * f, sy = rest.y + (apexY - rest.y) * f;     // slug rises to the print point
-        ctxL.strokeStyle = "rgba(228,224,208,.97)"; ctxL.lineWidth = 2.6;                  // arm
+        const g = ctxL.createLinearGradient(inner.x, inner.y, sx, sy);
+        g.addColorStop(0, "#8b9194"); g.addColorStop(.5, "#eef1f3"); g.addColorStop(1, "#c2c7c9");
+        ctxL.strokeStyle = g; ctxL.lineWidth = 3; ctxL.lineCap = "round";
         ctxL.beginPath(); ctxL.moveTo(inner.x, inner.y); ctxL.lineTo(sx, sy); ctxL.stroke();
-        ctxL.fillStyle = "#eef1f3"; ctxL.beginPath(); ctxL.arc(sx, sy, 3.6, 0, Math.PI * 2); ctxL.fill();
-        if (f > 0.8) { ctxL.fillStyle = `rgba(70,64,56,${(f - 0.8) / 0.2 * 0.55})`; ctxL.beginPath(); ctxL.arc(apexX, apexY, 5, 0, Math.PI * 2); ctxL.fill(); }
+        ctxL.fillStyle = "#f4f7f9"; ctxL.beginPath(); ctxL.arc(sx, sy, 3.6, 0, Math.PI * 2); ctxL.fill();
       } else fanStrike = null;
     }
-    // ribbon at the print point: a single band in the selected ink colour; lifts to meet the slug on a strike
-    {
-      const liftF = struck >= 0 ? Math.sin(Math.PI * Math.min(1, (now - fanStrike.t) / STRIKE_MS)) : 0;
-      const ribY = apexY + 12 - 9 * liftF, rw = Math.min(lidW * 0.5, 320), rh = 9;
-      ctxL.fillStyle = `rgb(${inkColor})`;
-      rrect(ctxL, apexX - rw / 2, ribY - rh / 2, rw, rh, 3); ctxL.fill();
-      ctxL.fillStyle = "rgba(255,255,255,.14)"; ctxL.fillRect(apexX - rw / 2 + 2, ribY - rh / 2 + 1, rw - 4, 1.4);
-    }
+
+    ctxL.restore();
+
+    // the cover's cut edge around the hole: inner shadow + thin highlight → reads as a punched opening in the cover
+    ctxL.strokeStyle = "rgba(0,0,0,.5)"; ctxL.lineWidth = 3.5; ctxL.stroke(shell);
+    ctxL.strokeStyle = "rgba(255,255,255,.09)"; ctxL.lineWidth = 1; ctxL.stroke(shell);
     ctxL.globalAlpha = 1;
   }
 
   function frame() {
-    const colT = colTarget, yT = rowTop[tw.caret.row] || 0;
-    if (reduce) { caretVisCol = colT; caretVisY = yT; relAmt = released ? 1 : 0; }
+    const now = performance.now(), colT = colTarget, yT = rowTop[tw.caret.row] || 0;
+    if (crAnim) {                                                     // carriage return: ease-out slide home over ~1s
+      const p = Math.min(1, (now - crAnim.t0) / crAnim.dur);
+      caretVisCol = crAnim.from * Math.pow(1 - p, 2);
+    } else if (reduce) caretVisCol = colT;
+    else { caretVisCol += (colT - caretVisCol) * 0.4; if (Math.abs(colT - caretVisCol) < 0.01) caretVisCol = colT; }
+    if (reduce) { caretVisY = yT; relAmt = released ? 1 : 0; }
     else {
-      caretVisCol += (colT - caretVisCol) * 0.4; caretVisY += (yT - caretVisY) * 0.32;
-      if (Math.abs(colT - caretVisCol) < 0.01) caretVisCol = colT;
-      if (Math.abs(yT - caretVisY) < 0.5) caretVisY = yT;
+      caretVisY += (yT - caretVisY) * 0.32; if (Math.abs(yT - caretVisY) < 0.5) caretVisY = yT;
       const rt = released ? 1 : 0; relAmt += (rt - relAmt) * 0.18; if (Math.abs(rt - relAmt) < 0.01) relAmt = rt;
     }
     carriage.style.transform = `translateX(${(-caretVisCol * charW * (1 - relAmt)).toFixed(2)}px)`; // slides while typing
@@ -270,6 +338,7 @@
     });
   }
   function emitChar(code) {
+    if (busy) return;
     const res = tw.pressKey(code);
     if (res.printed) {
       colTarget = res.col;                                       // this char's slot is at the print point
@@ -283,10 +352,22 @@
     if (latch && !physDown) { latch = false; syncShift(); }
     updateStatus();
   }
-  function doSpace() { const r = tw.space(); if (r.locked) sndLock(); else { sndKey(); if (r.bell) { flashBell(); sndBell(); } colTarget = tw.caret.col; } updateStatus(); }
-  function doBackspace() { if (tw.backspace().moved) { sndBack(); stepGen++; colTarget = tw.caret.col; } updateStatus(); }
-  function doCR() { tw.carriageReturn(); stepGen++; colTarget = tw.caret.col; sndCR(); swingLever(); updateStatus(); }
+  function doSpace() { if (busy) return; const r = tw.space(); if (r.locked) sndLock(); else { sndKey(); if (r.bell) { flashBell(); sndBell(); } colTarget = tw.caret.col; } updateStatus(); }
+  function doBackspace() { if (busy) return; if (tw.backspace().moved) { sndBack(); stepGen++; colTarget = tw.caret.col; } updateStatus(); }
+  // CR: push the lever tip right and slide the carriage home over ~1s; ignore input until it finishes
+  function doCR() {
+    if (busy) return;
+    tw.carriageReturn(); stepGen++;
+    const dist = caretVisCol; colTarget = 0;
+    const dur = Math.min(1000, Math.round(1000 * dist / COLS));        // slide time ∝ distance; full width ≈ 1s
+    if (dur < 70) { updateStatus(); return; }                          // already near home (e.g. repeated Enter) → no slide, just LF
+    busy = true; crAnim = { from: dist, t0: performance.now(), dur };
+    sndCR(dur); swingLever(dur);
+    setTimeout(() => { busy = false; crAnim = null; }, dur);
+    updateStatus();
+  }
   function doLF() {
+    if (busy) return;
     const prev = tw.caret.row; tw.lineFeed(); const r = tw.caret.row;
     if (rowTop[r] == null) rowTop[r] = rowTop[prev] + lineAdvance();   // feed up by the current line-height
     sndLF(); leverFront(); updateStatus();
@@ -324,13 +405,14 @@
   // ---- physical keyboard ----
   addEventListener("keydown", (e) => {
     if (!overlay.classList.contains("hide")) return;
+    if (busy) { e.preventDefault(); return; }                  // carriage returning — ignore input
     const c = e.code;
     if (c === "Escape") { e.preventDefault(); toggleRelease(); return; }
     if (c === "ShiftLeft" || c === "ShiftRight") { if (!physDown) { physDown = true; syncShift(); sndShift(); } return; }
     if (c === "CapsLock") { e.preventDefault(); tw.toggleShiftLock(); syncShift(); sndShift(); return; }
     if (c === "Enter" || c === "NumpadEnter") {
       e.preventDefault();
-      if (e.shiftKey) doCR(); else if (e.ctrlKey || e.metaKey) doLF(); else { doCR(); doLF(); }
+      if (e.shiftKey) doCR(); else if (e.ctrlKey || e.metaKey) doLF(); else { doLF(); doCR(); }   // CR+LF: feed up, then return
       return;
     }
     if (c === "Backspace") { e.preventDefault(); pressVisual("Backspace", true); doBackspace(); return; }
@@ -404,7 +486,7 @@
   setupSwitch("ribbonSwitch", "ink", (v) => { inkColor = INK[v] || INK.black; })("black", false);  // default black ink
   setupSwitch("lineSwitch", "lh", (v) => { lineHeight = parseFloat(v); })("1.5", false);            // default 1.5 spacing
   releaseEl.addEventListener("click", toggleRelease);
-  function swingLever() { leverEl.classList.remove("front"); leverEl.classList.add("swing"); setTimeout(() => leverEl.classList.remove("swing"), 240); }
+  function swingLever(ms) { leverEl.classList.remove("front"); leverEl.classList.add("swing"); setTimeout(() => leverEl.classList.remove("swing"), ms || 240); }
   function leverFront() { leverEl.classList.remove("swing"); leverEl.classList.add("front"); setTimeout(() => leverEl.classList.remove("front"), 240); }
 
   // ---- status ----
@@ -442,25 +524,33 @@
   const sndBack = () => burst({ dur: .03, freq: 1500, q: 1, gain: .3, decay: .05 });
   const sndLock = () => burst({ dur: .02, freq: 900, q: 2, gain: .25, decay: .03 });
   // margin bell — short, bright bicycle-bell ring (modelled on 自転車ベル2: ~5100Hz dominant + 1986Hz partial)
+  // 自転車の鈴のような「チリーン」：明るいリングが少し伸びて唸りながら減衰
   const sndBell = () => {
-    burst({ dur: .01, freq: 5200, q: 1, type: "highpass", gain: .16, decay: .012 });   // striker tick
-    tone({ freq: 5100, dur: .28, gain: .32 });                                         // main ring
-    tone({ freq: 5112, dur: .28, gain: .12 });                                         // slight detune → bell warble
-    tone({ freq: 1986, dur: .16, gain: .10 });                                         // lower partial
-    tone({ freq: 10200, dur: .10, gain: .045 });                                       // high shimmer
+    burst({ dur: .012, freq: 5400, q: 1, type: "highpass", gain: .18, decay: .014 });  // 「チ」striker
+    tone({ freq: 5100, dur: .62, gain: .34 });                                         // bright ring (sustains)
+    tone({ freq: 5119, dur: .62, gain: .17 });                                         // detune → bicycle-bell warble
+    tone({ freq: 2550, dur: .42, gain: .12 });                                         // body partial
+    tone({ freq: 7650, dur: .30, gain: .06 });                                         // shimmer
   };
-  // one cash-register "ching": a clack then a bright inharmonic bell (modelled on レジ ~6674/10510Hz)
-  function regChing(t0, gs) {
-    burst({ dur: .03, freq: 2600, q: .7, gain: .5 * gs, decay: .035, t: t0 });         // ka — key/drawer clack
-    burst({ dur: .015, freq: 700, q: .5, type: "lowpass", gain: .3 * gs, decay: .02, t: t0 });
-    const b = t0 + .012;                                                               // ching a hair after the clack
-    tone({ freq: 6674, dur: .22, gain: .34 * gs, t: b });                              // bright bell (dominant partial)
-    tone({ freq: 10510, dur: .16, gain: .18 * gs, t: b });                             // shimmer partial (sample is bright)
-    tone({ freq: 3050, dur: .18, gain: .12 * gs, t: b });                              // body partial
-    tone({ freq: 3950, dur: .13, gain: .07 * gs, type: "triangle", t: b });
+  // CR — the carriage pulled across (length ∝ the slide): a low mechanical drag + escapement ratchet + a clunk at the stop
+  function sndCR(durMs) {
+    const c = ac(), now = c.currentTime, dur = Math.max(.12, (durMs || 850) / 1000);
+    const src = c.createBufferSource(); src.buffer = noiseBuf(dur);
+    const bp = c.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = .8;
+    bp.frequency.setValueAtTime(330, now);
+    bp.frequency.linearRampToValueAtTime(520, now + dur * 0.6);
+    bp.frequency.linearRampToValueAtTime(300, now + dur);
+    const g = c.createGain();
+    g.gain.setValueAtTime(.0001, now);
+    g.gain.linearRampToValueAtTime(.24, now + .05);                                    // grab
+    g.gain.linearRampToValueAtTime(.17, now + dur * 0.7);                              // pulling the roller
+    g.gain.exponentialRampToValueAtTime(.0001, now + dur);
+    src.connect(bp); bp.connect(g); g.connect(out());
+    src.start(now); src.stop(now + dur + .02);
+    const ticks = Math.max(2, Math.round(dur / 0.1));
+    for (let i = 0; i < ticks; i++) burst({ dur: .01, freq: 1500, q: 2.5, gain: .07, decay: .012, t: .05 + i * (dur - .08) / ticks });  // ratchet
+    setTimeout(() => { tone({ freq: 115, dur: .12, gain: .4, type: "sine" }); burst({ dur: .035, freq: 900, q: 1, gain: .32, decay: .045 }); }, Math.round(dur * 1000) - 40);  // clunk at the stop
   }
-  // Enter / carriage return — two overlaid chings ("chin-chin")
-  function sndCR() { regChing(0, 1); regChing(.08, .82); }
   function sndLF() { burst({ dur: .025, freq: 1800, q: 1.5, gain: .35, decay: .03 }); setTimeout(() => burst({ dur: .025, freq: 1400, q: 1.5, gain: .28, decay: .03 }), 55); }
   function sndShift() { burst({ dur: .05, freq: 360, q: .6, type: "lowpass", gain: .4, decay: .07 }); setTimeout(() => burst({ dur: .03, freq: 1600, q: 1.4, gain: .32, decay: .04 }), 32); }
   function sndShiftUp() { burst({ dur: .04, freq: 300, q: .6, type: "lowpass", gain: .28, decay: .05 }); }
