@@ -109,17 +109,24 @@
   .lh-switch{position:absolute;right:7px;top:50%;transform:translateY(-50%);
     display:flex;flex-direction:column;gap:10px;z-index:8;
     padding:9px 6px 9px 19px;border-radius:16px;background:rgba(0,0,0,.32);box-shadow:inset 0 1px 3px rgba(0,0,0,.6),0 1px 0 rgba(255,255,255,.06)}
-  .lh{width:15px;height:15px;border-radius:50%;border:2px solid rgba(0,0,0,.4);padding:0;cursor:pointer;
+  .lh-switch.left{right:auto;left:7px;padding:9px 19px 9px 6px}   /* 行間スイッチ：左寄せ・ノブレーンは右 */
+  .lh{width:16px;height:16px;border-radius:50%;border:2px solid rgba(0,0,0,.4);padding:0;cursor:pointer;
     opacity:.5;transition:opacity .15s,transform .15s,box-shadow .15s}
-  .lh.red{background:#d8392c}
-  .lh.white{background:#f1ece0}
-  .lh.blue{background:#2f6ad1}
+  /* リボン色（くすんだインク：青／黒／赤） */
+  .lh.ink-blue{background:#3a567a}
+  .lh.ink-black{background:#2b2a26}
+  .lh.ink-red{background:#963e36}
+  /* 行間（数字ラベル） */
+  .lh.num{background:radial-gradient(circle at 38% 30%,#46443f,#201f1c);color:#efe9da;
+    font-family:"Courier Prime","Courier New",monospace;font-weight:700;font-size:8px;line-height:1;
+    display:flex;align-items:center;justify-content:center}
   .lh:hover{opacity:.85}
   .lh.active{opacity:1;transform:scale(1.14);box-shadow:0 0 0 2px rgba(255,255,255,.85)}
-  /* sliding chrome handle in the left lane = the switch you flip */
-  .lh-knob{position:absolute;left:4px;top:38px;width:9px;height:19px;border-radius:5px;pointer-events:none;
+  /* sliding chrome handle = the switch you flip */
+  .lh-knob{position:absolute;left:4px;top:39px;width:9px;height:20px;border-radius:5px;pointer-events:none;
     background:linear-gradient(180deg,#eef0ec,#9aa0a0);box-shadow:0 1px 2px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.75);
     transition:top .13s cubic-bezier(.2,.8,.25,1.3)}
+  .lh-switch.left .lh-knob{left:auto;right:4px}
 
   /* ステータス */
   .strip{width:min(800px,100%);display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:space-between;font-size:12px;color:var(--label-dim)}

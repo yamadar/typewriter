@@ -20,7 +20,8 @@
   const codes = new Set(LAYOUT.rows.flat().map((k) => k.code));
 
   // ---- paper geometry (the paper is a wide sheet drawn at 1 CSS px = 1 unit) ----
-  const FS = 17, ROWH = Math.round(FS * 1.5), GAP = 8, VIS_ROWS = 10, PLATEN_H = 6;
+  const FS = 17, ROWH = Math.round(FS * 1.5), GAP = 8, VIS_ROWS = 5;   // realistic: only a few lines on the platen front
+  const BACK_H = 14, ROLLER_MIN = 26, TOP_MARGIN = 26;                 // platen scene: back-paper band / min roller / sheet top margin
   const FONT = `${FS}px "Courier Prime","Courier New",monospace`;
   // equal margins on both sides of the text; the print point stays at the deck centre
   let charW = FS * 0.6, padL = 48, padR = 48, pageW = 0, pageH = 0, curH = 0, printLineY = 0, platenTopY = 0;
@@ -32,6 +33,7 @@
   let colTarget = 0, stepGen = 0;    // carriage steps to colTarget AFTER the hammer strikes (escapement)
   let released = false, relAmt = 0;
   let lineHeight = 1.5;              // LF spacing factor: 1.0 single / 1.5 / 2.0 double
+  let inkColor = "43,42,38";        // ribbon ink (r,g,b): black by default
   const rowTop = [0];                // cumulative top px per row (depends on the line-height at each LF)
   const STEP_DELAY = 100;           // ms after a keystrike before the paper steps one character (≈ strike contact)
 
@@ -66,9 +68,9 @@
     ctx.font = FONT; charW = ctx.measureText("M").width || FS * 0.6;
     padL = 48; padR = 48;        // equal margins both sides; positionCarriage keeps col0 at the deck centre
     pageW = Math.round(padL + COLS * charW + padR);
-    printLineY = 8 + (VIS_ROWS - 1) * ROWH + FS;
-    platenTopY = printLineY + 2;
-    pageH = platenTopY + PLATEN_H;
+    printLineY = BACK_H + ROLLER_MIN + 10 + (VIS_ROWS - 1) * ROWH + FS;   // front window sits below the platen roller
+    platenTopY = printLineY + 4;
+    pageH = printLineY + 18;                                              // room for the bail / descenders below the print line
     setCanvasH(pageH);                    // canvas backing + ctx (grows when the released sheet needs > VIS_ROWS rows)
     deck.style.height = pageH + "px";
   }
@@ -92,22 +94,46 @@
       const y = rowToY(s.row); if (y < -ROWH || y > clipBottom + ROWH) continue;
       const x = colToX(s.col);
       ctx.save(); ctx.translate(x + s.jx, y + s.jy); if (s.rot) ctx.rotate(s.rot);
-      ctx.fillStyle = `rgba(43,42,38,${s.a})`; ctx.fillText(s.ch, 0, 0); ctx.restore();
+      ctx.fillStyle = `rgba(${s.ink || "43,42,38"},${s.a})`; ctx.fillText(s.ch, 0, 0); ctx.restore();
     }
     if (relAmt < 0.5) {
       const cx = colToX(colTarget), cy = rowToY(tw.caret.row);   // caret sits at the print point (carriage target)
       ctx.fillStyle = "#c0392b"; ctx.globalAlpha = .9 * (1 - relAmt * 2); ctx.fillRect(cx, cy + 4, charW, 2); ctx.globalAlpha = 1;
     }
     ctx.restore();
-    // platen roller along the bottom (fades out when the paper is released; never on the tall released sheet)
-    if (relAmt < 1 && curH === pageH) {
-      ctx.globalAlpha = 1 - relAmt;
-      const g = ctx.createLinearGradient(0, platenTopY, 0, pageH);
-      g.addColorStop(0, "#3a3a31"); g.addColorStop(.5, "#26261f"); g.addColorStop(1, "#15140f");
-      ctx.fillStyle = g; rrect(ctx, 0, platenTopY, pageW, pageH - platenTopY, 4); ctx.fill();
-      ctx.fillStyle = "rgba(255,255,255,.1)"; ctx.fillRect(0, platenTopY, pageW, 2);
-      ctx.globalAlpha = 1;
+    // platen scene (black roller / back of fed sheet / top edge / paper bail) — typing view only; fades on release
+    if (relAmt < 1 && curH === pageH) drawPlaten(1 - relAmt);
+  }
+  // the paper wrapped on the platen: black roller behind, the fed sheet's back face above it, the sheet's top edge, the paper bail
+  function drawPlaten(al) {
+    ctx.globalAlpha = al;
+    const topEdgeY = printLineY - caretVisY - TOP_MARGIN;                          // sheet top edge — scrolls up as you type
+    const rollerBottom = Math.max(BACK_H + ROLLER_MIN, Math.min(topEdgeY, printLineY - 6));
+    // (a) black platen roller (cylinder): from under the back-sheet down to the sheet's top edge
+    const rg = ctx.createLinearGradient(0, BACK_H, 0, rollerBottom);
+    rg.addColorStop(0, "#15140f"); rg.addColorStop(.42, "#34322b"); rg.addColorStop(.52, "#3e3c34"); rg.addColorStop(.62, "#2a2823"); rg.addColorStop(1, "#121109");
+    ctx.fillStyle = rg; ctx.fillRect(0, BACK_H, pageW, rollerBottom - BACK_H);
+    // (b) back of the fed sheet, standing up behind the roller
+    const bg = ctx.createLinearGradient(0, 0, 0, BACK_H);
+    bg.addColorStop(0, "#cdc4ae"); bg.addColorStop(1, "#ded5bf");
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, pageW, BACK_H);
+    ctx.fillStyle = "rgba(0,0,0,.30)"; ctx.fillRect(0, BACK_H - 1, pageW, 1);                              // shadow into the roller
+    // (c) the sheet's top edge (only while it is still on the front of the platen)
+    if (topEdgeY >= rollerBottom - 0.5 && topEdgeY < pageH) {
+      ctx.fillStyle = "rgba(0,0,0,.22)"; ctx.fillRect(0, topEdgeY, pageW, 2);
+      ctx.fillStyle = "rgba(255,255,255,.55)"; ctx.fillRect(0, topEdgeY + 2, pageW, 1);
     }
+    // (d) paper bail: a thin chrome bar with rubber rollers, holding the sheet just above the print line
+    const bailY = printLineY - 15;
+    const cgr = ctx.createLinearGradient(0, bailY - 2, 0, bailY + 2);
+    cgr.addColorStop(0, "rgba(228,231,227,.92)"); cgr.addColorStop(.5, "rgba(150,154,150,.92)"); cgr.addColorStop(1, "rgba(118,122,118,.92)");
+    ctx.fillStyle = cgr; rrect(ctx, 6, bailY - 2, pageW - 12, 4, 2); ctx.fill();
+    for (let k = 0; k < 3; k++) {
+      const bx = pageW * (0.2 + 0.3 * k);
+      ctx.fillStyle = "#1b1b18"; rrect(ctx, bx - 9, bailY - 4, 18, 8, 4); ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,.16)"; ctx.fillRect(bx - 7, bailY - 3, 14, 1);
+    }
+    ctx.globalAlpha = 1;
   }
 
   // ---- type-basket fan, drawn self-contained in the lid (the panel between paper & keyboard) ----
@@ -135,7 +161,7 @@
     ctxL.globalAlpha = 1 - relAmt;
     const apexX = lidW / 2, apexY = 4;               // strike point at the lid top-centre (under the print point)
     const R = lidH - 16, ri = R * 0.22;              // big folding fan (lid raised ~1.5x in CSS)
-    const PHI = 54 * Math.PI / 180, A0 = Math.PI / 2 - PHI, A1 = Math.PI / 2 + PHI;
+    const PHI = 75 * Math.PI / 180, A0 = Math.PI / 2 - PHI, A1 = Math.PI / 2 + PHI;   // ~150° spread
     const now = performance.now();
     const STRIKE_MS = 200;
     const struck = (fanStrike && now - fanStrike.t < STRIKE_MS) ? fanStrike.i : -1;
@@ -178,6 +204,14 @@
         ctxL.fillStyle = "#eef1f3"; ctxL.beginPath(); ctxL.arc(sx, sy, 3.6, 0, Math.PI * 2); ctxL.fill();
         if (f > 0.8) { ctxL.fillStyle = `rgba(70,64,56,${(f - 0.8) / 0.2 * 0.55})`; ctxL.beginPath(); ctxL.arc(apexX, apexY, 5, 0, Math.PI * 2); ctxL.fill(); }
       } else fanStrike = null;
+    }
+    // ribbon at the print point: a single band in the selected ink colour; lifts to meet the slug on a strike
+    {
+      const liftF = struck >= 0 ? Math.sin(Math.PI * Math.min(1, (now - fanStrike.t) / STRIKE_MS)) : 0;
+      const ribY = apexY + 12 - 9 * liftF, rw = Math.min(lidW * 0.5, 320), rh = 9;
+      ctxL.fillStyle = `rgb(${inkColor})`;
+      rrect(ctxL, apexX - rw / 2, ribY - rh / 2, rw, rh, 3); ctxL.fill();
+      ctxL.fillStyle = "rgba(255,255,255,.14)"; ctxL.fillRect(apexX - rw / 2 + 2, ribY - rh / 2 + 1, rw - 4, 1.4);
     }
     ctxL.globalAlpha = 1;
   }
@@ -230,7 +264,7 @@
   // ---- actions ----
   function addStamp(res) {
     stamps.push({
-      row: res.row, col: res.col, ch: res.char,
+      row: res.row, col: res.col, ch: res.char, ink: inkColor,
       jx: (Math.random() - .5) * 1.4, jy: (Math.random() - .5) * 1.4,
       a: .78 + Math.random() * .22, rot: (Math.random() - .5) * .03,
     });
@@ -352,17 +386,23 @@
   }
   sheetView.addEventListener("click", () => { if (released) toggleRelease(); });   // click the sheet to put it back
 
-  // ---- line-height switch (blue 1.0 / white 1.5 / red 2.0) — a 3-position switch; flipping it changes LF spacing ----
-  const lhSwitch = document.getElementById("lhSwitch"), lhKnob = document.getElementById("lhKnob");
-  function positionKnob() { const a = lhSwitch.querySelector(".lh.active"); if (a && a.offsetParent) lhKnob.style.top = a.offsetTop + "px"; }
-  function setLineHeight(v, click) {
-    lineHeight = v;
-    lhSwitch.querySelectorAll(".lh").forEach((b) => b.classList.toggle("active", parseFloat(b.dataset.lh) === v));
-    positionKnob();
-    if (click) sndSwitch();                       // "pachi" detent click on a flip
+  // ---- lid switches: ribbon colour (right) + line spacing (left). Both are 3-position switches with a "pachi" ----
+  const INK = { blue: "58,86,122", black: "43,42,38", red: "150,62,54" };  // muted ink blue / black / muted ink red (r,g,b)
+  const switchRepos = [];
+  function setupSwitch(id, key, onPick) {
+    const el = document.getElementById(id); if (!el) return;
+    const knob = el.querySelector(".lh-knob");
+    const repos = () => { const a = el.querySelector(".lh.active"); if (a && a.offsetParent) knob.style.top = a.offsetTop + "px"; };
+    const pick = (val, click) => {
+      el.querySelectorAll(".lh").forEach((b) => b.classList.toggle("active", b.dataset[key] === String(val)));
+      repos(); onPick(val); if (click) sndSwitch();   // "pachi" detent click on a flip
+    };
+    el.querySelectorAll(".lh").forEach((b) => b.addEventListener("click", () => pick(b.dataset[key], true)));
+    switchRepos.push(repos);
+    return pick;
   }
-  lhSwitch.querySelectorAll(".lh").forEach((b) => b.addEventListener("click", () => setLineHeight(parseFloat(b.dataset.lh), true)));
-  setLineHeight(lineHeight);
+  setupSwitch("ribbonSwitch", "ink", (v) => { inkColor = INK[v] || INK.black; })("black", false);  // default black ink
+  setupSwitch("lineSwitch", "lh", (v) => { lineHeight = parseFloat(v); })("1.5", false);            // default 1.5 spacing
   releaseEl.addEventListener("click", toggleRelease);
   function swingLever() { leverEl.classList.remove("front"); leverEl.classList.add("swing"); setTimeout(() => leverEl.classList.remove("swing"), 240); }
   function leverFront() { leverEl.classList.remove("swing"); leverEl.classList.add("front"); setTimeout(() => leverEl.classList.remove("front"), 240); }
@@ -459,7 +499,7 @@
     fanIndex.clear();
     items.forEach((it, i) => fanIndex.set(it.c, i));
   }
-  function layoutAll() { layout(); positionCarriage(); layoutLid(); buildFanOrder(); positionKnob(); }
+  function layoutAll() { layout(); positionCarriage(); layoutLid(); buildFanOrder(); switchRepos.forEach((f) => f()); }
   overlay.addEventListener("click", () => { overlay.classList.add("hide"); const c = ac(); if (c.resume) c.resume(); layoutAll(); updateStatus(); }, { once: true });
   let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(layoutAll, 120); });
   // re-run layout whenever the machine actually gets/changes its size (preview viewport can settle late)

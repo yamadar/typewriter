@@ -22,12 +22,19 @@
 
     <div class="lid">
       <canvas id="lid" aria-hidden="true"></canvas>
-      <!-- 行間（line-height）スイッチ：上から 青=1.0 / 白=1.5 / 赤=2.0。LFの行送り量が変わる -->
-      <div class="lh-switch" id="lhSwitch" role="group" aria-label="行間 line-height">
-        <span class="lh-knob" id="lhKnob" aria-hidden="true"></span>
-        <button class="lh blue"  type="button" data-lh="1"   title="Single 1.0" aria-label="Single 1.0"></button>
-        <button class="lh white" type="button" data-lh="1.5" title="1.5" aria-label="1.5"></button>
-        <button class="lh red"   type="button" data-lh="2"   title="Double 2.0" aria-label="Double 2.0"></button>
+      <!-- 左：行間スイッチ（上から 1.0 / 1.5 / 2.0）。LFの行送り量が変わる -->
+      <div class="lh-switch left" id="lineSwitch" role="group" aria-label="行間 line spacing">
+        <span class="lh-knob" aria-hidden="true"></span>
+        <button class="lh num" type="button" data-lh="1"   title="行間 Single 1.0">1</button>
+        <button class="lh num" type="button" data-lh="1.5" title="行間 1.5">1½</button>
+        <button class="lh num" type="button" data-lh="2"   title="行間 Double 2.0">2</button>
+      </div>
+      <!-- 右：リボン色スイッチ（上から 青インク / 黒 / 赤インク）。打鍵の色が変わる -->
+      <div class="lh-switch" id="ribbonSwitch" role="group" aria-label="リボン色 ribbon colour">
+        <span class="lh-knob" aria-hidden="true"></span>
+        <button class="lh ink-blue"  type="button" data-ink="blue"  title="青インク" aria-label="青インク"></button>
+        <button class="lh ink-black" type="button" data-ink="black" title="黒インク" aria-label="黒インク"></button>
+        <button class="lh ink-red"   type="button" data-ink="red"   title="赤インク" aria-label="赤インク"></button>
       </div>
     </div>
 
