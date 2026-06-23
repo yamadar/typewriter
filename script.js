@@ -20,10 +20,10 @@
   const codes = new Set(LAYOUT.rows.flat().map((k) => k.code));
 
   // ---- paper geometry (the paper is a wide sheet drawn at 1 CSS px = 1 unit) ----
-  const FS = 19, ROWH = Math.round(FS * 1.5), GAP = 8, VIS_ROWS = 10, PLATEN_H = 10;
+  const FS = 17, ROWH = Math.round(FS * 1.5), GAP = 8, VIS_ROWS = 10, PLATEN_H = 10;
   const FONT = `${FS}px "Courier Prime","Courier New",monospace`;
-  // padL = wide left margin so the sheet fills the deck at line start (no red beside it)
-  let charW = FS * 0.6, padL = 40, padR = 28, pageW = 0, pageH = 0, printLineY = 0, platenTopY = 0;
+  // equal margins on both sides of the text; the print point stays at the deck centre
+  let charW = FS * 0.6, padL = 48, padR = 48, pageW = 0, pageH = 0, printLineY = 0, platenTopY = 0;
 
   // ---- render state ----
   const stamps = [];                 // {row,col,ch,jx,jy,a,rot}
@@ -58,10 +58,7 @@
   function layout() {
     const dpr = Math.min(devicePixelRatio || 1, 2);
     ctx.font = FONT; charW = ctx.measureText("M").width || FS * 0.6;
-    const deckW = deck.clientWidth || 700;
-    const leverW = (document.getElementById("leverCR").offsetWidth) || 34;
-    padL = Math.max(40, Math.round(deckW / 2 - leverW - GAP));   // print point ≈ deck centre
-    padR = 28;
+    padL = 48; padR = 48;        // equal margins both sides; positionCarriage keeps col0 at the deck centre
     pageW = Math.round(padL + COLS * charW + padR);
     printLineY = 8 + (VIS_ROWS - 1) * ROWH + FS;
     platenTopY = printLineY + 6;
@@ -177,7 +174,9 @@
       if (Math.abs(tr - caretVisRow) < 0.01) caretVisRow = tr;
       const rt = released ? 1 : 0; relAmt += (rt - relAmt) * 0.18; if (Math.abs(rt - relAmt) < 0.01) relAmt = rt;
     }
-    carriage.style.transform = `translateX(${(-caretVisCol * charW * (1 - relAmt)).toFixed(2)}px)`; // slides; home when released
+    const relX = padL - pageW / 2;                                    // released: centre the whole sheet on screen
+    const x = (-caretVisCol * charW) * (1 - relAmt) + relX * relAmt;
+    carriage.style.transform = `translateX(${x.toFixed(2)}px)`;        // slides while typing; sheet centred when released
     drawPaper(); drawFan();
     requestAnimationFrame(frame);
   }
@@ -317,26 +316,50 @@
   function updateStatus() { statusEl.firstChild.nodeValue = `行 ${tw.caret.row + 1} · 桁 ${tw.caret.col + 1} `; }
   let bellTimer; function flashBell() { bellDot.classList.add("on"); clearTimeout(bellTimer); bellTimer = setTimeout(() => bellDot.classList.remove("on"), 260); }
 
-  // ---- Web Audio ----
-  let actx = null; const ac = () => actx || (actx = new (window.AudioContext || window.webkitAudioContext)());
+  // ---- Web Audio (all voices share a compressor bus so loud hits stay punchy, not clipped) ----
+  let actx = null, busIn = null;
+  function ac() {
+    if (!actx) {
+      actx = new (window.AudioContext || window.webkitAudioContext)();
+      const comp = actx.createDynamicsCompressor();
+      comp.threshold.value = -10; comp.knee.value = 24; comp.ratio.value = 4; comp.attack.value = .003; comp.release.value = .18;
+      const master = actx.createGain(); master.gain.value = .92;
+      comp.connect(master); master.connect(actx.destination); busIn = comp;
+    }
+    return actx;
+  }
+  const out = () => { ac(); return busIn; };
   function noiseBuf(d) { const c = ac(), n = Math.floor(c.sampleRate * d), b = c.createBuffer(1, n, c.sampleRate), a = b.getChannelData(0); for (let i = 0; i < n; i++) a[i] = Math.random() * 2 - 1; return b; }
   function burst({ dur = .04, freq = 2200, q = 1, type = "bandpass", gain = .5, decay = null } = {}) {
     const c = ac(), s = c.createBufferSource(); s.buffer = noiseBuf(dur);
     const f = c.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
     const g = c.createGain(), now = c.currentTime, d = decay ?? dur;
     g.gain.setValueAtTime(gain, now); g.gain.exponentialRampToValueAtTime(.0001, now + d);
-    s.connect(f); f.connect(g); g.connect(c.destination); s.start(); s.stop(now + d + .02);
+    s.connect(f); f.connect(g); g.connect(out()); s.start(); s.stop(now + d + .02);
   }
   function tone({ freq = 1000, dur = .18, gain = .25, type = "sine" } = {}) {
     const c = ac(), o = c.createOscillator(), g = c.createGain(), now = c.currentTime;
     o.type = type; o.frequency.value = freq; g.gain.setValueAtTime(gain, now); g.gain.exponentialRampToValueAtTime(.0001, now + dur);
-    o.connect(g); g.connect(c.destination); o.start(); o.stop(now + dur + .02);
+    o.connect(g); g.connect(out()); o.start(); o.stop(now + dur + .02);
   }
   const sndKey = () => burst({ dur: .03, freq: 2400, q: .8, gain: .45, decay: .05 });
   const sndBack = () => burst({ dur: .03, freq: 1500, q: 1, gain: .3, decay: .05 });
   const sndLock = () => burst({ dur: .02, freq: 900, q: 2, gain: .25, decay: .03 });
   const sndBell = () => { burst({ dur: .012, freq: 5200, q: 1, type: "highpass", gain: .22, decay: .02 }); tone({ freq: 1190, dur: .6, gain: .3 }); tone({ freq: 1790, dur: .5, gain: .15 }); tone({ freq: 2660, dur: .34, gain: .07 }); };
-  function sndCR() { burst({ dur: .16, freq: 600, q: .5, type: "lowpass", gain: .3, decay: .18 }); setTimeout(() => burst({ dur: .04, freq: 1200, q: 1, gain: .4, decay: .06 }), 130); }
+  // Enter / carriage return — the big "ガッチャン": carriage zips across, bell dings, then slams the margin stop and rings out
+  function sndCR() {
+    burst({ dur: .22, freq: 480, q: .35, type: "lowpass", gain: .42, decay: .22 });   // GA — carriage flying across the rail
+    burst({ dur: .12, freq: 2600, q: .3, type: "highpass", gain: .10, decay: .14 });   //      rail hiss
+    setTimeout(sndBell, 70);                                                           // bell rings during the return
+    setTimeout(() => {                                                                 // CHAN — slams the stop: thud + metal clang
+      tone({ freq: 84, dur: .26, gain: .6, type: "sine" });                           //      body thud (weight)
+      tone({ freq: 156, dur: .20, gain: .34, type: "triangle" });
+      burst({ dur: .07, freq: 1500, q: .8, gain: .7, decay: .10 });                    //      impact clack
+      tone({ freq: 440, dur: .55, gain: .24, type: "square" });                        //      ringing metal (resounds)
+      tone({ freq: 1180, dur: .42, gain: .15, type: "square" });
+      tone({ freq: 2640, dur: .30, gain: .08, type: "triangle" });
+    }, 160);
+  }
   function sndLF() { burst({ dur: .025, freq: 1800, q: 1.5, gain: .35, decay: .03 }); setTimeout(() => burst({ dur: .025, freq: 1400, q: 1.5, gain: .28, decay: .03 }), 55); }
   function sndShift() { burst({ dur: .05, freq: 360, q: .6, type: "lowpass", gain: .4, decay: .07 }); setTimeout(() => burst({ dur: .03, freq: 1600, q: 1.4, gain: .32, decay: .04 }), 32); }
   function sndShiftUp() { burst({ dur: .04, freq: 300, q: .6, type: "lowpass", gain: .28, decay: .05 }); }
