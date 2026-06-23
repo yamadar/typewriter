@@ -330,40 +330,61 @@
   }
   const out = () => { ac(); return busIn; };
   function noiseBuf(d) { const c = ac(), n = Math.floor(c.sampleRate * d), b = c.createBuffer(1, n, c.sampleRate), a = b.getChannelData(0); for (let i = 0; i < n; i++) a[i] = Math.random() * 2 - 1; return b; }
-  function burst({ dur = .04, freq = 2200, q = 1, type = "bandpass", gain = .5, decay = null } = {}) {
+  function burst({ dur = .04, freq = 2200, q = 1, type = "bandpass", gain = .5, decay = null, t = 0 } = {}) {
     const c = ac(), s = c.createBufferSource(); s.buffer = noiseBuf(dur);
     const f = c.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
-    const g = c.createGain(), now = c.currentTime, d = decay ?? dur;
+    const g = c.createGain(), now = c.currentTime + t, d = decay ?? dur;
     g.gain.setValueAtTime(gain, now); g.gain.exponentialRampToValueAtTime(.0001, now + d);
-    s.connect(f); f.connect(g); g.connect(out()); s.start(); s.stop(now + d + .02);
+    s.connect(f); f.connect(g); g.connect(out()); s.start(now); s.stop(now + d + .02);
   }
-  function tone({ freq = 1000, dur = .18, gain = .25, type = "sine" } = {}) {
-    const c = ac(), o = c.createOscillator(), g = c.createGain(), now = c.currentTime;
+  function tone({ freq = 1000, dur = .18, gain = .25, type = "sine", t = 0 } = {}) {
+    const c = ac(), o = c.createOscillator(), g = c.createGain(), now = c.currentTime + t;
     o.type = type; o.frequency.value = freq; g.gain.setValueAtTime(gain, now); g.gain.exponentialRampToValueAtTime(.0001, now + dur);
-    o.connect(g); g.connect(out()); o.start(); o.stop(now + dur + .02);
+    o.connect(g); g.connect(out()); o.start(now); o.stop(now + dur + .02);
   }
   const sndKey = () => burst({ dur: .03, freq: 2400, q: .8, gain: .45, decay: .05 });
   const sndBack = () => burst({ dur: .03, freq: 1500, q: 1, gain: .3, decay: .05 });
   const sndLock = () => burst({ dur: .02, freq: 900, q: 2, gain: .25, decay: .03 });
-  const sndBell = () => { burst({ dur: .012, freq: 5200, q: 1, type: "highpass", gain: .22, decay: .02 }); tone({ freq: 1190, dur: .6, gain: .3 }); tone({ freq: 1790, dur: .5, gain: .15 }); tone({ freq: 2660, dur: .34, gain: .07 }); };
-  // Enter / carriage return — the big "ガッチャン": carriage zips across, bell dings, then slams the margin stop and rings out
+  // margin bell — short, bright bicycle-bell ring (modelled on 自転車ベル2: ~5100Hz dominant + 1986Hz partial)
+  const sndBell = () => {
+    burst({ dur: .01, freq: 5200, q: 1, type: "highpass", gain: .16, decay: .012 });   // striker tick
+    tone({ freq: 5100, dur: .28, gain: .32 });                                         // main ring
+    tone({ freq: 5112, dur: .28, gain: .12 });                                         // slight detune → bell warble
+    tone({ freq: 1986, dur: .16, gain: .10 });                                         // lower partial
+    tone({ freq: 10200, dur: .10, gain: .045 });                                       // high shimmer
+  };
+  // Enter / carriage return — short cash-register "ching" (modelled on レジ: clack then a bright inharmonic bell ~6674/10510Hz)
   function sndCR() {
-    burst({ dur: .22, freq: 480, q: .35, type: "lowpass", gain: .42, decay: .22 });   // GA — carriage flying across the rail
-    burst({ dur: .12, freq: 2600, q: .3, type: "highpass", gain: .10, decay: .14 });   //      rail hiss
-    setTimeout(sndBell, 70);                                                           // bell rings during the return
-    setTimeout(() => {                                                                 // CHAN — slams the stop: thud + metal clang
-      tone({ freq: 84, dur: .26, gain: .6, type: "sine" });                           //      body thud (weight)
-      tone({ freq: 156, dur: .20, gain: .34, type: "triangle" });
-      burst({ dur: .07, freq: 1500, q: .8, gain: .7, decay: .10 });                    //      impact clack
-      tone({ freq: 440, dur: .55, gain: .24, type: "square" });                        //      ringing metal (resounds)
-      tone({ freq: 1180, dur: .42, gain: .15, type: "square" });
-      tone({ freq: 2640, dur: .30, gain: .08, type: "triangle" });
-    }, 160);
+    burst({ dur: .03, freq: 2600, q: .7, gain: .5, decay: .035 });                     // ka — key/drawer clack
+    burst({ dur: .015, freq: 700, q: .5, type: "lowpass", gain: .3, decay: .02 });     //      clack body
+    const b = .012;                                                                    // ching a hair after the clack
+    tone({ freq: 6674, dur: .22, gain: .34, t: b });                                   // bright bell (dominant partial)
+    tone({ freq: 10510, dur: .16, gain: .18, t: b });                                  // shimmer partial (sample is bright)
+    tone({ freq: 3050, dur: .18, gain: .12, t: b });                                   // body partial
+    tone({ freq: 3950, dur: .13, gain: .07, type: "triangle", t: b });
   }
   function sndLF() { burst({ dur: .025, freq: 1800, q: 1.5, gain: .35, decay: .03 }); setTimeout(() => burst({ dur: .025, freq: 1400, q: 1.5, gain: .28, decay: .03 }), 55); }
   function sndShift() { burst({ dur: .05, freq: 360, q: .6, type: "lowpass", gain: .4, decay: .07 }); setTimeout(() => burst({ dur: .03, freq: 1600, q: 1.4, gain: .32, decay: .04 }), 32); }
   function sndShiftUp() { burst({ dur: .04, freq: 300, q: .6, type: "lowpass", gain: .28, decay: .05 }); }
-  function sndRelease() { burst({ dur: .09, freq: 240, q: .5, type: "lowpass", gain: .4, decay: .12 }); setTimeout(() => burst({ dur: .05, freq: 3000, q: .5, type: "highpass", gain: .12, decay: .08 }), 70); }
+  // paper release — a page-turn rustle (modelled on ページめくり2: broadband paper noise that swishes up, with a flick)
+  function sndRelease() {
+    const c = ac(), now = c.currentTime, dur = .5;
+    const src = c.createBufferSource(); src.buffer = noiseBuf(dur);
+    const hp = c.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 220;     // keep the paper body, drop rumble
+    const bp = c.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = .6;
+    bp.frequency.setValueAtTime(550, now);
+    bp.frequency.linearRampToValueAtTime(1400, now + .30);                                 // swish up as the sheet turns
+    bp.frequency.linearRampToValueAtTime(850, now + dur);
+    const g = c.createGain();
+    g.gain.setValueAtTime(.0001, now);
+    g.gain.linearRampToValueAtTime(.12, now + .05);                                        // soft rustle...
+    g.gain.linearRampToValueAtTime(.06, now + .17);
+    g.gain.linearRampToValueAtTime(.34, now + .30);                                        // ...building to the main flick
+    g.gain.linearRampToValueAtTime(.12, now + .40);
+    g.gain.exponentialRampToValueAtTime(.0001, now + dur);
+    src.connect(hp); hp.connect(bp); bp.connect(g); g.connect(out());
+    src.start(now); src.stop(now + dur + .02);
+  }
 
   // ---- startup ----
   const overlay = document.getElementById("overlay");
