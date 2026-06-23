@@ -13,33 +13,24 @@
 
   <div class="machine">
     <div class="deck">
-      <div class="lever-col">
+      <div class="carriage" id="carriage">
         <button class="lever-btn" id="leverCR" aria-label="キャリッジリターン (CR)"><span class="lever-arm"></span><span class="lever-pivot"></span></button>
-        <span class="ctl-label"><b>CR レバー</b>横戻し<br>Shift+Enter</span>
-      </div>
-      <div class="platen-col">
-        <div class="carriage" id="carriage">
-          <div class="paper-frame"><canvas id="paper"></canvas></div>
-        </div>
-      </div>
-      <div class="knob-col">
-        <button class="knob-btn" id="knobLF" aria-label="改行ノブ (LF)"><span class="knob" id="knob"></span></button>
-        <span class="ctl-label"><b>改行ノブ</b>縦送り<br>Ctrl+Enter</span>
+        <div class="paper-frame"><canvas id="paper"></canvas></div>
         <button class="release-btn" id="paperRelease" aria-pressed="false" aria-label="用紙解放レバー（紙を取り出す）"><span class="release-arm"></span><span class="release-pivot"></span></button>
-        <span class="ctl-label"><b>用紙解放</b>引いて取り出す</span>
       </div>
     </div>
+
+    <div class="lid"><canvas id="lid" aria-hidden="true"></canvas></div>
 
     <div class="cover">
       <div class="logo"><span>✈ </span>AIR MAIL</div>
       <div class="keyboard" id="keyboard"></div>
     </div>
-    <canvas class="mech" id="mech" aria-hidden="true"></canvas>
   </div>
 
   <div class="strip">
     <div class="keys">
-      <kbd>Enter</kbd>CR+LF&nbsp; <kbd>Shift+Enter</kbd>CR&nbsp; <kbd>Ctrl+Enter</kbd>LF&nbsp; <kbd>Shift</kbd>大文字・記号&nbsp; <kbd>CapsLock</kbd>Shift Lock（全段）&nbsp; <kbd>Backspace</kbd>後退（重ね打ち）
+      <kbd>Enter</kbd>CR+LF&nbsp; <kbd>Shift+Enter</kbd>CR&nbsp; <kbd>Ctrl+Enter</kbd>LF&nbsp; <kbd>Backspace</kbd>後退（重ね打ち）&nbsp; <kbd>Esc</kbd>用紙解放
     </div>
     <div class="status" id="status">行 1 · 桁 1 <span class="bell-dot" id="belldot"></span></div>
   </div>

@@ -12,8 +12,8 @@
   body{
     background:radial-gradient(120% 100% at 50% 0%,#4a4540 0%,#2c2724 70%,#1d1a18 100%);
     font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--label);
-    display:flex;flex-direction:column;align-items:center;justify-content:center;
-    min-height:100%;padding:20px 14px;gap:16px;-webkit-font-smoothing:antialiased;
+    display:flex;flex-direction:column;align-items:center;justify-content:flex-start;
+    min-height:100%;padding:16px 14px;gap:14px;-webkit-font-smoothing:antialiased;
   }
 
   .machine{
@@ -21,45 +21,39 @@
     background:linear-gradient(180deg,var(--body-1),var(--body-2) 55%,var(--body-3));
     border-radius:22px 22px 18px 18px;
     box-shadow:0 30px 60px rgba(0,0,0,.5),inset 0 2px 0 rgba(255,255,255,.22),inset 0 -8px 18px rgba(0,0,0,.28);
-    padding:14px 14px 18px;position:relative;
+    padding:0 14px 18px;position:relative;
   }
 
-  /* 上段 */
-  .deck{display:flex;align-items:flex-start;gap:10px}
-  .lever-col,.knob-col{flex:0 0 84px;display:flex;flex-direction:column;align-items:center;gap:8px;padding-top:6px}
-  .lever-btn{appearance:none;border:0;background:none;cursor:pointer;width:74px;height:118px;position:relative}
-  .lever-arm{position:absolute;left:50%;bottom:8px;width:12px;height:94px;
-    background:linear-gradient(90deg,var(--chrome-3),var(--chrome-1),var(--chrome-3));border-radius:7px;
+  /* 上段：キャリッジ（左CRレバー＋紙＋右用紙解放レバー）が一体で横移動。デッキは窓としてクリップ */
+  .deck{position:relative;overflow:hidden;margin-bottom:6px}
+  .carriage{position:absolute;top:0;left:0;display:flex;align-items:flex-end;gap:8px;will-change:transform}
+  .paper-frame{position:relative;flex:0 0 auto;background:#f3ecdb;border-radius:4px 4px 3px 3px;box-shadow:0 8px 18px rgba(0,0,0,.45);overflow:hidden}
+  canvas#paper{display:block}
+
+  /* CRレバー（紙の左端の左）：右へ引く=CR ／ 手前へ引く=LF ／ クリック=CR+LF */
+  .lever-btn{appearance:none;border:0;background:none;cursor:pointer;width:34px;height:86px;position:relative;flex:0 0 auto;margin-bottom:8px}
+  .lever-arm{position:absolute;left:50%;bottom:6px;width:10px;height:74px;
+    background:linear-gradient(90deg,var(--chrome-3),var(--chrome-1),var(--chrome-3));border-radius:6px;
     transform-origin:50% 100%;transform:translateX(-50%) rotate(-14deg);transition:transform .14s cubic-bezier(.2,.7,.3,1);box-shadow:0 2px 4px rgba(0,0,0,.35)}
-  .lever-arm::after{content:"";position:absolute;top:-9px;left:50%;transform:translateX(-50%);width:26px;height:18px;border-radius:9px;background:linear-gradient(180deg,var(--chrome-1),var(--chrome-3));box-shadow:0 2px 3px rgba(0,0,0,.35)}
+  .lever-arm::after{content:"";position:absolute;top:-8px;left:50%;transform:translateX(-50%);width:22px;height:15px;border-radius:8px;background:linear-gradient(180deg,var(--chrome-1),var(--chrome-3));box-shadow:0 2px 3px rgba(0,0,0,.35)}
   .lever-btn.swing .lever-arm{transform:translateX(-50%) rotate(76deg)}
-  .lever-btn.front .lever-arm{transform:translateX(-50%) rotate(4deg) translateY(22px) scaleY(.9)}
-  .lever-pivot{position:absolute;left:50%;bottom:4px;transform:translateX(-50%);width:18px;height:18px;border-radius:50%;background:radial-gradient(circle at 35% 30%,var(--chrome-1),var(--chrome-3))}
-  .knob-btn{appearance:none;border:0;background:none;cursor:pointer;padding:6px}
-  .knob{width:62px;height:62px;border-radius:50%;background:radial-gradient(circle at 34% 30%,#3a3a36,#191916 70%);box-shadow:0 4px 8px rgba(0,0,0,.4),inset 0 2px 4px rgba(255,255,255,.12);position:relative;transition:transform .16s cubic-bezier(.25,.8,.3,1)}
-  .knob::before{content:"";position:absolute;inset:6px;border-radius:50%;background:repeating-conic-gradient(#2c2c29 0 7deg,#444440 7deg 14deg);mask:radial-gradient(circle,transparent 52%,#000 53%);-webkit-mask:radial-gradient(circle,transparent 52%,#000 53%)}
-  .knob::after{content:"";position:absolute;top:50%;left:50%;width:8px;height:8px;border-radius:50%;transform:translate(-50%,-50%);background:var(--chrome-2)}
-  .ctl-label{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--label-dim);text-align:center;line-height:1.5}
-  .ctl-label b{color:var(--label);display:block;font-size:11px;letter-spacing:.06em}
+  .lever-btn.front .lever-arm{transform:translateX(-50%) rotate(6deg) translateY(18px) scaleY(.9)}
+  .lever-pivot{position:absolute;left:50%;bottom:2px;transform:translateX(-50%);width:16px;height:16px;border-radius:50%;background:radial-gradient(circle at 35% 30%,var(--chrome-1),var(--chrome-3))}
 
-  .platen-col{flex:1;min-width:0}
-  /* セグメントシフト：シフトしても紙（キャリッジ）は跳ねない。プラテンは canvas 内に描画しキャリッジと一緒に横移動する */
-  .carriage{transition:transform .09s ease}
-  .paper-frame{margin:0 6px;background:#1d1a16;border-radius:6px;box-shadow:0 8px 18px rgba(0,0,0,.4),inset 0 0 0 1px rgba(0,0,0,.5);overflow:hidden;position:relative}
-  canvas{display:block;width:100%}
-
-  /* 用紙解放レバー（右側）：引くと回転 */
-  .release-btn{appearance:none;border:0;background:none;cursor:pointer;width:64px;height:40px;position:relative;margin-top:4px}
-  .release-arm{position:absolute;left:9px;top:50%;width:44px;height:9px;border-radius:6px;
+  /* 用紙解放レバー（紙の右端の右）：引くと回転 */
+  .release-btn{appearance:none;border:0;background:none;cursor:pointer;width:52px;height:34px;position:relative;flex:0 0 auto;margin-bottom:12px}
+  .release-arm{position:absolute;left:7px;top:50%;width:38px;height:8px;border-radius:5px;
     background:linear-gradient(180deg,var(--chrome-1),var(--chrome-3));
     transform-origin:0 50%;transform:translateY(-50%) rotate(-8deg);
     transition:transform .16s cubic-bezier(.2,.7,.3,1);box-shadow:0 2px 4px rgba(0,0,0,.35)}
-  .release-arm::after{content:"";position:absolute;right:-6px;top:50%;transform:translateY(-50%);width:15px;height:15px;border-radius:50%;background:radial-gradient(circle at 35% 30%,var(--chrome-1),var(--chrome-3));box-shadow:0 1px 2px rgba(0,0,0,.35)}
-  .release-pivot{position:absolute;left:5px;top:50%;transform:translateY(-50%);width:12px;height:12px;border-radius:50%;background:radial-gradient(circle at 35% 30%,var(--chrome-1),var(--chrome-3));box-shadow:inset 0 1px 1px rgba(255,255,255,.5)}
+  .release-arm::after{content:"";position:absolute;right:-5px;top:50%;transform:translateY(-50%);width:13px;height:13px;border-radius:50%;background:radial-gradient(circle at 35% 30%,var(--chrome-1),var(--chrome-3));box-shadow:0 1px 2px rgba(0,0,0,.35)}
+  .release-pivot{position:absolute;left:4px;top:50%;transform:translateY(-50%);width:11px;height:11px;border-radius:50%;background:radial-gradient(circle at 35% 30%,var(--chrome-1),var(--chrome-3));box-shadow:inset 0 1px 1px rgba(255,255,255,.5)}
   .release-btn.pulled .release-arm{transform:translateY(-50%) rotate(30deg)}
 
-  /* AIR MAIL カバー＋ロゴ */
-  .cover{margin-top:14px;background:linear-gradient(180deg,var(--cover),var(--cover-2));border-radius:14px 14px 12px 12px;padding:8px 12px 12px;box-shadow:0 4px 10px rgba(0,0,0,.25),inset 0 1px 0 rgba(255,255,255,.7)}
+  /* AIR MAIL カバー＋ロゴ。上の余白＝紙とキーボードの間の「蓋」（その穴に扇型アームが見える） */
+  .cover{margin-top:0;background:linear-gradient(180deg,var(--cover),var(--cover-2));border-radius:14px 14px 12px 12px;padding:8px 12px 12px;box-shadow:0 4px 10px rgba(0,0,0,.25),inset 0 1px 0 rgba(255,255,255,.7);transition:opacity .3s}
+  /* 用紙解放中：キーボードを暗くして印字された紙を見せる */
+  body.released .cover{opacity:.22}
   .logo{font-weight:700;letter-spacing:.28em;font-size:14px;color:var(--accent);text-align:left;padding:2px 4px 8px}
   .logo span{color:#3a3a36}
 
@@ -97,7 +91,11 @@
   .shift-on .key.dual .up{opacity:1;color:#ff7a63;font-weight:700}
   .shift-on .key.dual b{opacity:.4}
   /* 機構（各キーのアーム→印字点へ収束）：マシン全体に重ねる透明オーバーレイ */
-  .mech{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:4}
+  /* 蓋：紙とキーボードの間の本体パネル。canvas に扇型の穴を描き、アームが見える */
+  .lid{position:relative;height:112px;margin:6px 0 8px;border-radius:7px;
+    background:linear-gradient(180deg,#b23529,#8e281e);
+    box-shadow:inset 0 2px 7px rgba(0,0,0,.45),inset 0 -1px 0 rgba(255,255,255,.06),0 1px 0 rgba(0,0,0,.3)}
+  #lid{display:block;width:100%;height:100%}
 
   /* ステータス */
   .strip{width:min(800px,100%);display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:space-between;font-size:12px;color:var(--label-dim)}
@@ -113,8 +111,5 @@
   .overlay b{display:block;font-size:22px;letter-spacing:.24em;margin-bottom:6px;color:var(--accent)}
   .hide{display:none}
 
-  /* キー寸法は clamp() で流動的に追従するためブレークポイント不要。周辺だけ調整 */
-  @media (max-width:640px){
-    .lever-col,.knob-col{flex-basis:60px}
-  }
+  /* キー寸法は clamp() で流動的に追従するためブレークポイント不要 */
   @media (prefers-reduced-motion:reduce){.carriage,.key{transition:none}}

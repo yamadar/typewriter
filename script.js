@@ -1,21 +1,15 @@
 /*
  * script.js — view / IO layer for the typewriter.
  *
- * Typing logic lives in the model (typewriter-model.js, unit-tested). This file
- * builds the keyboard from LAYOUT, wires input, renders the paper + mechanism on
- * <canvas>, and plays Web Audio.
+ * Typing logic lives in the model (typewriter-model.js, unit-tested). This file builds
+ * the keyboard from LAYOUT, wires input, renders the paper + mechanism, and plays audio.
  *
- * Look & mechanism (see docs/typewriter-mechanism.md):
- *  - Antique round black keys; modifiers placed like a real board: Shift Lock left
- *    of A, left Shift left of Z, right Shift right of /?, Backspace right of P,
- *    a wide Space bar on its own row.
- *  - Below the keys, a mechanism canvas draws each key's arm/typebar converging to
- *    the single type-basket strike point; pressing a key swings its hammer there.
- *  - The PRINT POINT on the paper is FIXED; the paper (carriage) moves: left while
- *    typing, back right on CR, up on LF. Single SHIFT picks the upper glyph for all
- *    keys; SHIFT LOCK latches it for all. CR/LF are separate.
- *  - Carriage-return lever: pull right = CR, pull toward you (down) = LF, click = CR+LF.
- *  - Paper-release lever: detaches the sheet and shows the typed page on its own.
+ * Carriage model (like a real machine): the print point is FIXED. The whole carriage —
+ * [CR lever][paper][paper-release lever] — slides left as you type, back on CR, and the
+ * paper feeds up on LF. The type basket (folding-fan) is fixed below the print point.
+ *  - Single SHIFT picks the upper glyph for all keys; SHIFT LOCK latches it for all
+ *    (and lights the Shift keys). CR/LF are separate.
+ *  - CR lever: pull right = CR, pull toward you (down) = LF, click = CR+LF.
  */
 (() => {
   "use strict";
@@ -25,202 +19,153 @@
   const COLS = tw.cols;
   const codes = new Set(LAYOUT.rows.flat().map((k) => k.code));
 
-  // ---- paper canvas geometry ----
-  const VIS_ROWS = 12, FS = 19, ROWH = Math.round(FS * 1.5);
-  const PAD_X = 22, PAD_Y = 16, PLATEN_H = 30, FONT = `${FS}px "Courier Prime","Courier New",monospace`;
-  let charW = FS * 0.6, cssW = 0, cssH = 0, printX = 0, printY = 0, platenTop = 0;
+  // ---- paper geometry (the paper is a wide sheet drawn at 1 CSS px = 1 unit) ----
+  const FS = 19, ROWH = Math.round(FS * 1.5), GAP = 8, VIS_ROWS = 10, PLATEN_H = 10;
+  const FONT = `${FS}px "Courier Prime","Courier New",monospace`;
+  // padL = wide left margin so the sheet fills the deck at line start (no red beside it)
+  let charW = FS * 0.6, padL = 40, padR = 28, pageW = 0, pageH = 0, printLineY = 0, platenTopY = 0;
 
   // ---- render state ----
   const stamps = [];                 // {row,col,ch,jx,jy,a,rot}
-  let mechStrike = null;             // mechanism hammer {code,t}
-  let caretVisCol = 0, caretVisRow = 0; // animated carriage position
-  let released = false, relAmt = 0;  // paper-release (0 engaged .. 1 detached)
+  let fanStrike = null;              // which typebar is striking {i,t}
+  let caretVisCol = 0, caretVisRow = 0;
+  let released = false, relAmt = 0;
 
   // ---- view-side input modality (model owns the actual shift state) ----
   let physDown = false, latch = false;
 
-  // ---- small DOM helpers ----
+  // ---- helpers ----
   const div = (cls) => { const d = document.createElement("div"); d.className = cls; return d; };
   const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const isLetter = (k) => k.lo >= "a" && k.lo <= "z";
 
-  // ---- paper canvas ----
+  // ---- elements ----
   const cv = document.getElementById("paper"), ctx = cv.getContext("2d");
-  const rrect = (x, y, w, h, r) => { ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(x, y, w, h, r); else ctx.rect(x, y, w, h); };
-  const colToX = (c) => printX + (c - caretVisCol) * charW;
-  const rowToY = (r) => printY + (r - caretVisRow) * ROWH;
+  const lid = document.getElementById("lid"), ctxL = lid.getContext("2d");
+  const deck = document.querySelector(".deck");
+  const carriage = document.getElementById("carriage");
+  const paperFrame = carriage.querySelector(".paper-frame");
+  const rrect = (c, x, y, w, h, r) => { c.beginPath(); if (c.roundRect) c.roundRect(x, y, w, h, r); else c.rect(x, y, w, h); };
+  const colToX = (col) => padL + col * charW;
+  const rowToY = (row) => {
+    const norm = printLineY + (row - caretVisRow) * ROWH;
+    if (relAmt <= 0) return norm;
+    const rel = (FS + 10) + row * ROWH;          // released: show the page from the top
+    return norm + (rel - norm) * relAmt;
+  };
 
+  // ---- paper canvas layout ----
   function layout() {
     const dpr = Math.min(devicePixelRatio || 1, 2);
     ctx.font = FONT; charW = ctx.measureText("M").width || FS * 0.6;
-    cssW = COLS * charW + PAD_X * 2; cssH = VIS_ROWS * ROWH + PAD_Y * 2 + PLATEN_H;
-    printX = Math.round(cssW * 0.5); printY = cssH - PLATEN_H - 14; platenTop = printY + 8;
-    cv.style.aspectRatio = `${cssW} / ${cssH}`;
-    const realW = cv.clientWidth || cssW, scale = realW / cssW;
-    cv.width = Math.round(realW * dpr); cv.height = Math.round(cssH * scale * dpr);
-    ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
-    ctx.textBaseline = "alphabetic"; ctx.textAlign = "left";
+    const deckW = deck.clientWidth || 700;
+    const leverW = (document.getElementById("leverCR").offsetWidth) || 34;
+    padL = Math.max(40, Math.round(deckW / 2 - leverW - GAP));   // print point ≈ deck centre
+    padR = 28;
+    pageW = Math.round(padL + COLS * charW + padR);
+    printLineY = 8 + (VIS_ROWS - 1) * ROWH + FS;
+    platenTopY = printLineY + 6;
+    pageH = platenTopY + PLATEN_H;
+    cv.style.width = pageW + "px"; cv.style.height = pageH + "px";
+    cv.width = Math.round(pageW * dpr); cv.height = Math.round(pageH * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.textBaseline = "alphabetic"; ctx.textAlign = "left"; ctx.font = FONT;
+    deck.style.height = pageH + "px";
   }
 
-  function draw() {
+  function drawPaper() {
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cv.width, cv.height); ctx.restore();
     ctx.font = FONT;
-    if (relAmt < 1) drawMachine(1 - relAmt);
-    if (relAmt > 0) drawReleased(relAmt);
-  }
-
-  function drawMachine(alpha) {
-    ctx.save(); ctx.globalAlpha = alpha;
-    ctx.fillStyle = "#f3ecdb"; ctx.fillRect(0, 0, cssW, cssH);
-    ctx.save(); ctx.beginPath(); ctx.rect(0, 0, cssW, platenTop); ctx.clip();
+    ctx.fillStyle = "#f3ecdb"; ctx.fillRect(0, 0, pageW, pageH);                 // the sheet
+    ctx.fillStyle = "rgba(0,0,0,.05)"; ctx.fillRect(0, 0, pageW, 6);             // faint top edge
+    const clipBottom = platenTopY + (pageH - platenTopY) * relAmt;              // released: reveal whole page
+    ctx.save(); ctx.beginPath(); ctx.rect(0, 0, pageW, clipBottom); ctx.clip();
     for (const s of stamps) {
-      const x = colToX(s.col); if (x < -charW || x > cssW + charW) continue;
-      const y = rowToY(s.row); if (y < -ROWH || y > platenTop + ROWH) continue;
+      const y = rowToY(s.row); if (y < -ROWH || y > clipBottom + ROWH) continue;
+      const x = colToX(s.col);
       ctx.save(); ctx.translate(x + s.jx, y + s.jy); if (s.rot) ctx.rotate(s.rot);
       ctx.fillStyle = `rgba(43,42,38,${s.a})`; ctx.fillText(s.ch, 0, 0); ctx.restore();
     }
-    const cx = colToX(tw.caret.col), cy = rowToY(tw.caret.row);
-    ctx.fillStyle = "#c0392b"; ctx.globalAlpha = alpha * 0.9; ctx.fillRect(cx, cy + 4, charW, 2);
-    ctx.restore();
-    drawPlaten();
-    drawPrintGuide();
-    ctx.restore();
-  }
-
-  function drawPlaten() {
-    const top = platenTop, h = cssH - top;
-    const g = ctx.createLinearGradient(0, top, 0, cssH);
-    g.addColorStop(0, "#3a3a31"); g.addColorStop(.5, "#26261f"); g.addColorStop(1, "#15140f");
-    ctx.fillStyle = g; rrect(-10, top, cssW + 20, h, 7); ctx.fill();
-    ctx.fillStyle = "rgba(255,255,255,.10)"; ctx.fillRect(-10, top, cssW + 20, 2);
-    const off = -caretVisCol * charW, sp = charW * 2;
-    ctx.save(); ctx.beginPath(); ctx.rect(0, top, cssW, h); ctx.clip();
-    ctx.strokeStyle = "rgba(255,255,255,.06)"; ctx.lineWidth = 1;
-    const startX = ((off % sp) + sp) % sp - sp;
-    for (let x = startX; x < cssW + sp; x += sp) { ctx.beginPath(); ctx.moveTo(x, top + 5); ctx.lineTo(x, cssH - 5); ctx.stroke(); }
-    ctx.restore();
-  }
-
-  function drawPrintGuide() {
-    ctx.strokeStyle = "rgba(192,57,43,.6)"; ctx.lineWidth = 2; ctx.lineCap = "round";
-    ctx.beginPath(); ctx.moveTo(printX - 7, printY - 3); ctx.lineTo(printX - 7, printY + 7); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(printX + 7, printY - 3); ctx.lineTo(printX + 7, printY + 7); ctx.stroke();
-  }
-
-  function drawReleased(alpha) {
-    ctx.save(); ctx.globalAlpha = alpha;
-    ctx.fillStyle = "#1d1a16"; ctx.fillRect(0, 0, cssW, cssH);
-    let maxRow = tw.caret.row, maxCol = tw.caret.col;
-    for (const s of stamps) { if (s.row > maxRow) maxRow = s.row; if (s.col + 1 > maxCol) maxCol = s.col + 1; }
-    const padX = 18, padY = 16;
-    const pageRows = Math.max(maxRow + 1, 6), pageCols = Math.max(maxCol, COLS);
-    const sheetW = pageCols * charW + padX * 2, sheetH = pageRows * ROWH + padY * 2;
-    const sc = Math.min(1, (cssW - 24) / sheetW, (cssH - 24) / sheetH);
-    const dw = sheetW * sc, dh = sheetH * sc, ox = (cssW - dw) / 2, oy = (cssH - dh) / 2 - (1 - alpha) * 18;
-    ctx.save(); ctx.shadowColor = "rgba(0,0,0,.5)"; ctx.shadowBlur = 18; ctx.shadowOffsetY = 10;
-    ctx.fillStyle = "#faf4e6"; rrect(ox, oy, dw, dh, 6); ctx.fill(); ctx.restore();
-    ctx.save(); ctx.beginPath(); ctx.rect(ox, oy, dw, dh); ctx.clip();
-    ctx.translate(ox, oy); ctx.scale(sc, sc); ctx.font = FONT;
-    const baseTop = padY + FS;
-    for (const s of stamps) {
-      ctx.save(); ctx.translate(padX + s.col * charW + s.jx, baseTop + s.row * ROWH + s.jy); if (s.rot) ctx.rotate(s.rot);
-      ctx.fillStyle = `rgba(43,42,38,${s.a})`; ctx.fillText(s.ch, 0, 0); ctx.restore();
+    if (relAmt < 0.5) {
+      const cx = colToX(tw.caret.col), cy = rowToY(tw.caret.row);
+      ctx.fillStyle = "#c0392b"; ctx.globalAlpha = .9 * (1 - relAmt * 2); ctx.fillRect(cx, cy + 4, charW, 2); ctx.globalAlpha = 1;
     }
-    ctx.restore(); ctx.restore();
+    ctx.restore();
+    // platen roller along the bottom (fades out when the paper is released)
+    if (relAmt < 1) {
+      ctx.globalAlpha = 1 - relAmt;
+      const g = ctx.createLinearGradient(0, platenTopY, 0, pageH);
+      g.addColorStop(0, "#3a3a31"); g.addColorStop(.5, "#26261f"); g.addColorStop(1, "#15140f");
+      ctx.fillStyle = g; rrect(ctx, 0, platenTopY, pageW, pageH - platenTopY, 4); ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,.1)"; ctx.fillRect(0, platenTopY, pageW, 2);
+      ctx.globalAlpha = 1;
+    }
   }
 
-  // ---- mechanism overlay: each character key's typebar rises to the FIXED print point ----
-  const mech = document.getElementById("mech"), ctxM = mech.getContext("2d");
-  let mechW = 0, mechH = 0, apexX = 0, apexY = 0;
-  const keyGeo = []; // {code, x, y} in overlay coords (key top-centre)
-  function layoutMech() {
+  // ---- type-basket fan, drawn self-contained in the lid (the panel between paper & keyboard) ----
+  let lidW = 0, lidH = 0;
+  const fanCodes = LAYOUT.rows.flat().map((k) => k.code);    // one typebar per character key
+  const fanIndex = new Map(); fanCodes.forEach((c, i) => fanIndex.set(c, i));
+  const fanN = fanCodes.length;
+
+  function layoutLid() {
     const dpr = Math.min(devicePixelRatio || 1, 2);
-    const mr = mech.getBoundingClientRect();
-    mechW = mr.width; mechH = mr.height;
-    mech.width = Math.round(mechW * dpr); mech.height = Math.round(mechH * dpr);
-    ctxM.setTransform(dpr, 0, 0, dpr, 0, 0);
-    measureMech(mr);
+    const r = lid.getBoundingClientRect();
+    lidW = r.width; lidH = r.height;
+    lid.width = Math.round(lidW * dpr); lid.height = Math.round(lidH * dpr);
+    ctxL.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
-  function measureMech(mr) {
-    mr = mr || mech.getBoundingClientRect();
-    const pr = cv.getBoundingClientRect();
-    apexX = pr.left + printX * (pr.width / cssW) - mr.left;  // the paper's print point,
-    apexY = pr.top + printY * (pr.height / cssH) - mr.top;   // mapped into overlay coords
-    keyGeo.length = 0;
-    keyMap.forEach((el, code) => {
-      if (!codes.has(code)) return;                          // only printing keys have typebars
-      const r = el.getBoundingClientRect();
-      keyGeo.push({ code, x: r.left + r.width / 2 - mr.left, y: r.top + r.height / 2 - mr.top });
-    });
-    // rank left→right so the typebars sit evenly across the fan (no key juts out at the edge)
-    keyGeo.slice().sort((a, b) => a.x - b.x).forEach((k, i) => { k.rank = i; });
+  function positionCarriage() {
+    carriage.style.transform = "translateX(0px)";
+    const dr = deck.getBoundingClientRect();
+    carriage.style.left = (dr.width / 2 - paperFrame.offsetLeft - padL) + "px";
   }
-  function drawMech() {
-    if (!mechW) return;
-    ctxM.clearRect(0, 0, mechW, mechH);
-    const vis = 1 - relAmt;                                  // fades out when paper is released
-    ctxM.globalAlpha = vis;
-    const now = performance.now();
-    // Folding-fan type basket: silver slugs on the wide outer arc, thin typebars fanning up to a
-    // solid hub (the "fan handle" that seats the bars), all in a fan-shaped opening in the cover.
-    let minKeyY = Infinity;
-    for (const k of keyGeo) if (k.y < minKeyY) minKeyY = k.y;
-    const N = keyGeo.length || 1;
-    const R = Math.max(56, (minKeyY - apexY) * 0.66);       // outer (silver-slug) radius
-    const ri = R * 0.26;                                     // inner radius = the hub
+  function drawFan() {
+    if (!lidW) return;
+    ctxL.clearRect(0, 0, lidW, lidH);
+    ctxL.globalAlpha = 1 - relAmt;
+    const apexX = lidW / 2, apexY = 6;               // print point at the lid top-centre
+    const R = lidH - 12, ri = R * 0.22;
     const PHI = 54 * Math.PI / 180, A0 = Math.PI / 2 - PHI, A1 = Math.PI / 2 + PHI;
-    const ang = (t) => Math.PI / 2 - PHI * Math.max(-1, Math.min(1, t));
-    const tOf = (k) => N > 1 ? (2 * k.rank / (N - 1) - 1) : 0; // even spread by rank
+    const now = performance.now();
+    const aOf = (i) => Math.PI / 2 - PHI * (fanN > 1 ? (2 * i / (fanN - 1) - 1) : 0);
     const pt = (a, r) => ({ x: apexX + r * Math.cos(a), y: apexY + r * Math.sin(a) });
 
-    // 0) fan-shaped opening in the cover — the dark machine interior you see through the hole
-    ctxM.beginPath(); ctxM.moveTo(apexX, apexY); ctxM.arc(apexX, apexY, R, A0, A1); ctxM.closePath();
-    const rg = ctxM.createRadialGradient(apexX, apexY, ri * 0.6, apexX, apexY, R);
-    rg.addColorStop(0, "rgba(24,22,18,.92)"); rg.addColorStop(1, "rgba(10,9,7,.96)");
-    ctxM.fillStyle = rg; ctxM.fill();
-    // outer rim where the slugs rest
-    ctxM.strokeStyle = "rgba(150,145,132,.3)"; ctxM.lineWidth = 2;
-    ctxM.beginPath(); ctxM.arc(apexX, apexY, R, A0, A1); ctxM.stroke();
+    // fan-shaped hole (dark machine interior seen through the lid)
+    ctxL.beginPath(); ctxL.moveTo(apexX, apexY); ctxL.arc(apexX, apexY, R, A0, A1); ctxL.closePath();
+    const rg = ctxL.createRadialGradient(apexX, apexY, ri, apexX, apexY, R);
+    rg.addColorStop(0, "rgba(26,24,20,.96)"); rg.addColorStop(1, "rgba(8,7,5,.99)");
+    ctxL.fillStyle = rg; ctxL.fill();
+    ctxL.strokeStyle = "rgba(255,255,255,.07)"; ctxL.lineWidth = 2;
+    ctxL.beginPath(); ctxL.arc(apexX, apexY, R, A0, A1); ctxL.stroke();
 
-    // 1) key links (behind the keys), rising to each typebar's resting slug
-    for (const k of keyGeo) {
-      const a = ang(tOf(k)), s = pt(a, R);
-      const on = mechStrike && mechStrike.code === k.code && (now - mechStrike.t) < 170;
-      ctxM.strokeStyle = on ? "rgba(150,144,132,.5)" : "rgba(60,55,48,.1)";
-      ctxM.lineWidth = 1;
-      ctxM.beginPath(); ctxM.moveTo(k.x, k.y); ctxM.lineTo(k.x, s.y + 8); ctxM.lineTo(s.x, s.y); ctxM.stroke();
+    // typebars + resting silver slug heads on the outer arc
+    for (let i = 0; i < fanN; i++) {
+      const a = aOf(i), inner = pt(a, ri), s = pt(a, R);
+      const on = fanStrike && fanStrike.i === i && (now - fanStrike.t) < 170;
+      ctxL.strokeStyle = on ? "rgba(195,190,175,.95)" : "rgba(150,144,128,.55)";
+      ctxL.lineWidth = on ? 2 : 1.2;
+      ctxL.beginPath(); ctxL.moveTo(inner.x, inner.y); ctxL.lineTo(s.x, s.y); ctxL.stroke();
+      if (!on) { ctxL.fillStyle = "#d2d5d7"; ctxL.beginPath(); ctxL.arc(s.x, s.y, 2.3, 0, Math.PI * 2); ctxL.fill(); }
     }
-    // 2) typebars (ribs) + resting silver slug heads on the outer arc
-    for (const k of keyGeo) {
-      const a = ang(tOf(k)), inner = pt(a, ri), s = pt(a, R);
-      const on = mechStrike && mechStrike.code === k.code && (now - mechStrike.t) < 170;
-      ctxM.strokeStyle = on ? "rgba(180,175,160,.9)" : "rgba(128,122,107,.5)";
-      ctxM.lineWidth = on ? 2 : 1.1;
-      ctxM.beginPath(); ctxM.moveTo(inner.x, inner.y); ctxM.lineTo(s.x, s.y); ctxM.stroke();
-      if (!on) { ctxM.fillStyle = "#cfd2d4"; ctxM.beginPath(); ctxM.arc(s.x, s.y, 2.1, 0, Math.PI * 2); ctxM.fill(); }
-    }
-    // 3) the HUB (扇子の持ち手) — a solid rounded part the bars seat into, just below the print point
-    const hcY = apexY + 8;
-    ctxM.beginPath(); ctxM.arc(apexX, hcY, ri, 0, Math.PI); ctxM.closePath();
-    const hg = ctxM.createLinearGradient(apexX, hcY - ri, apexX, hcY + ri);
-    hg.addColorStop(0, "rgba(82,77,67,1)"); hg.addColorStop(1, "rgba(26,24,20,1)");
-    ctxM.fillStyle = hg; ctxM.fill();
-    ctxM.strokeStyle = "rgba(205,200,186,.5)"; ctxM.lineWidth = 1.4;
-    ctxM.beginPath(); ctxM.arc(apexX, hcY, ri, 0, Math.PI); ctxM.stroke();
-    // 4) the struck typebar swings its silver head up to the print point
-    if (mechStrike) {
-      const tt = (now - mechStrike.t) / 170;
+    // hub (the fan handle) that seats the typebars, at the print point
+    const hcY = apexY + 5;
+    ctxL.beginPath(); ctxL.arc(apexX, hcY, ri, 0, Math.PI); ctxL.closePath();
+    const hg = ctxL.createLinearGradient(apexX, hcY - ri, apexX, hcY + ri);
+    hg.addColorStop(0, "rgba(86,81,70,1)"); hg.addColorStop(1, "rgba(28,26,22,1)");
+    ctxL.fillStyle = hg; ctxL.fill();
+    ctxL.strokeStyle = "rgba(210,205,190,.55)"; ctxL.lineWidth = 1.4;
+    ctxL.beginPath(); ctxL.arc(apexX, hcY, ri, 0, Math.PI); ctxL.stroke();
+    // struck typebar swings its silver head up to the print point
+    if (fanStrike) {
+      const tt = (now - fanStrike.t) / 170;
       if (tt < 1) {
-        const k = keyGeo.find((g) => g.code === mechStrike.code);
-        if (k) {
-          const a = ang(tOf(k)), f = Math.sin(Math.PI * tt), s = pt(a, R);
-          const x = s.x + (apexX - s.x) * f, y = s.y + (apexY - s.y) * f;
-          ctxM.fillStyle = "#eef1f3"; ctxM.beginPath(); ctxM.arc(x, y, 2.8, 0, Math.PI * 2); ctxM.fill();
-          if (f > 0.82) { ctxM.fillStyle = `rgba(60,55,48,${(f - 0.82) / 0.18 * 0.5})`; ctxM.beginPath(); ctxM.arc(apexX, apexY, 4.5, 0, Math.PI * 2); ctxM.fill(); }
-        }
-      } else mechStrike = null;
+        const a = aOf(fanStrike.i), f = Math.sin(Math.PI * tt), s = pt(a, R);
+        const x = s.x + (apexX - s.x) * f, y = s.y + (apexY - s.y) * f;
+        ctxL.fillStyle = "#eef1f3"; ctxL.beginPath(); ctxL.arc(x, y, 2.8, 0, Math.PI * 2); ctxL.fill();
+        if (f > 0.82) { ctxL.fillStyle = `rgba(60,55,48,${(f - 0.82) / 0.18 * 0.5})`; ctxL.beginPath(); ctxL.arc(apexX, apexY, 4.5, 0, Math.PI * 2); ctxL.fill(); }
+      } else fanStrike = null;
     }
-    ctxM.globalAlpha = 1;
+    ctxL.globalAlpha = 1;
   }
 
   function frame() {
@@ -232,10 +177,12 @@
       if (Math.abs(tr - caretVisRow) < 0.01) caretVisRow = tr;
       const rt = released ? 1 : 0; relAmt += (rt - relAmt) * 0.18; if (Math.abs(rt - relAmt) < 0.01) relAmt = rt;
     }
-    draw(); drawMech(); requestAnimationFrame(frame);
+    carriage.style.transform = `translateX(${(-caretVisCol * charW * (1 - relAmt)).toFixed(2)}px)`; // slides; home when released
+    drawPaper(); drawFan();
+    requestAnimationFrame(frame);
   }
 
-  // ---- keyboard build (real placement of the modifier keys) ----
+  // ---- keyboard build ----
   const kb = document.getElementById("keyboard"), keyMap = new Map();
   function makeCharKey(k) {
     const el = div("key" + (isLetter(k) ? "" : " dual"));
@@ -250,15 +197,12 @@
     Backspace: { cls: "mod back", html: "◂◂" },
     Space: { cls: "space", html: "" },
   };
-  function makeMod(code) {
-    const d = SPECIAL[code]; const el = div("key " + d.cls); el.dataset.code = code; el.innerHTML = d.html;
-    keyMap.set(code, el); return el;
-  }
+  function makeMod(code) { const d = SPECIAL[code]; const el = div("key " + d.cls); el.dataset.code = code; el.innerHTML = d.html; keyMap.set(code, el); return el; }
   const BUILD = [
-    { keys: LAYOUT.rows[0] },                                          // 1 2 3 .. 0
-    { keys: LAYOUT.rows[1], after: ["Backspace"] },                   // Q..P  <<
-    { before: ["CapsLock"], keys: LAYOUT.rows[2] },                   // ShiftLock A..L ; '
-    { before: ["ShiftLeft"], keys: LAYOUT.rows[3], after: ["ShiftRight"] }, // LShift Z..M ,./ RShift
+    { keys: LAYOUT.rows[0] },
+    { keys: LAYOUT.rows[1], after: ["Backspace"] },
+    { before: ["CapsLock"], keys: LAYOUT.rows[2] },
+    { before: ["ShiftLeft"], keys: LAYOUT.rows[3], after: ["ShiftRight"] },
   ];
   BUILD.forEach((spec) => {
     const r = div("krow");
@@ -279,25 +223,20 @@
   }
   function emitChar(code) {
     const res = tw.pressKey(code);
-    if (res.printed) { addStamp(res); mechStrike = { code, t: performance.now() }; sndKey(); if (res.bell) { flashBell(); sndBell(); } }
+    if (res.printed) { addStamp(res); fanStrike = { i: fanIndex.get(code) || 0, t: performance.now() }; sndKey(); if (res.bell) { flashBell(); sndBell(); } }
     else if (res.locked) sndLock();
     if (latch && !physDown) { latch = false; syncShift(); }
     updateStatus();
   }
-  function doSpace() {
-    const r = tw.space();
-    if (r.locked) sndLock(); else { sndKey(); if (r.bell) { flashBell(); sndBell(); } }
-    updateStatus();
-  }
+  function doSpace() { const r = tw.space(); if (r.locked) sndLock(); else { sndKey(); if (r.bell) { flashBell(); sndBell(); } } updateStatus(); }
   function doBackspace() { if (tw.backspace().moved) sndBack(); updateStatus(); }
   function doCR() { tw.carriageReturn(); sndCR(); swingLever(); updateStatus(); }
-  function doLF() { tw.lineFeed(); sndLF(); spinKnob(); leverFront(); updateStatus(); }
+  function doLF() { tw.lineFeed(); sndLF(); leverFront(); updateStatus(); }
 
   // ---- shift visuals ----
   function syncShift() { tw.setShiftHeld(physDown || latch); updateShiftVisual(); }
   function updateShiftVisual() {
     document.body.classList.toggle("shift-on", tw.isShiftActive());
-    // Shift Lock mechanically holds the Shift keys down, so light them while it is engaged.
     const held = physDown || latch || tw.isShiftLocked();
     keyMap.get("ShiftLeft").classList.toggle("held", held);
     keyMap.get("ShiftRight").classList.toggle("held", held);
@@ -327,6 +266,7 @@
   addEventListener("keydown", (e) => {
     if (!overlay.classList.contains("hide")) return;
     const c = e.code;
+    if (c === "Escape") { e.preventDefault(); toggleRelease(); return; }
     if (c === "ShiftLeft" || c === "ShiftRight") { if (!physDown) { physDown = true; syncShift(); sndShift(); } return; }
     if (c === "CapsLock") { e.preventDefault(); tw.toggleShiftLock(); syncShift(); sndShift(); return; }
     if (c === "Enter" || c === "NumpadEnter") {
@@ -343,17 +283,11 @@
     if (c === "ShiftLeft" || c === "ShiftRight") { physDown = false; syncShift(); sndShiftUp(); return; }
     pressVisual(c, false);
   });
-  addEventListener("blur", () => {
-    physDown = false; latch = false; syncShift();
-    keyMap.forEach((el) => el.classList.remove("pressed"));
-  });
+  addEventListener("blur", () => { physDown = false; latch = false; syncShift(); keyMap.forEach((el) => el.classList.remove("pressed")); });
 
-  // ---- carriage-return lever: pull right = CR, pull toward you (down) = LF, click = CR+LF ----
-  const leverEl = document.getElementById("leverCR"),
-        knobBtn = document.getElementById("knobLF"),
-        knobEl = document.getElementById("knob"),
-        releaseEl = document.getElementById("paperRelease");
-  let knobAngle = 0, lvOn = false, lvX = 0, lvY = 0, lvFired = null, lvPid = null;
+  // ---- CR lever (right = CR, toward viewer = LF, click = CR+LF) + paper release ----
+  const leverEl = document.getElementById("leverCR"), releaseEl = document.getElementById("paperRelease");
+  let lvOn = false, lvX = 0, lvY = 0, lvFired = null, lvPid = null;
   leverEl.addEventListener("pointerdown", (e) => {
     e.preventDefault(); lvOn = true; lvFired = null; lvX = e.clientX; lvY = e.clientY; lvPid = e.pointerId;
     try { leverEl.setPointerCapture(e.pointerId); } catch (_) {}
@@ -364,24 +298,19 @@
     if (dx > 24 && dx >= Math.abs(dy)) { lvFired = "cr"; doCR(); }
     else if (dy > 24 && dy > Math.abs(dx)) { lvFired = "lf"; doLF(); }
   });
-  function endLever() {
-    if (!lvOn) return; lvOn = false;
-    try { leverEl.releasePointerCapture(lvPid); } catch (_) {}
-    if (!lvFired) { doCR(); doLF(); } // a plain pull does a full return
-  }
+  function endLever() { if (!lvOn) return; lvOn = false; try { leverEl.releasePointerCapture(lvPid); } catch (_) {} if (!lvFired) { doCR(); doLF(); } }
   leverEl.addEventListener("pointerup", endLever);
   leverEl.addEventListener("pointercancel", endLever);
-  knobBtn.addEventListener("click", doLF);
-  releaseEl.addEventListener("click", () => {
+  function toggleRelease() {
     released = !released;
     releaseEl.classList.toggle("pulled", released);
     releaseEl.setAttribute("aria-pressed", String(released));
+    document.body.classList.toggle("released", released);
     sndRelease();
-  });
-  // Brief, user-triggered mechanism feedback — kept even under reduced-motion (it's the point of a typewriter).
+  }
+  releaseEl.addEventListener("click", toggleRelease);
   function swingLever() { leverEl.classList.remove("front"); leverEl.classList.add("swing"); setTimeout(() => leverEl.classList.remove("swing"), 240); }
   function leverFront() { leverEl.classList.remove("swing"); leverEl.classList.add("front"); setTimeout(() => leverEl.classList.remove("front"), 240); }
-  function spinKnob() { knobAngle += 52; knobEl.style.transform = `rotate(${knobAngle}deg)`; }
 
   // ---- status ----
   const statusEl = document.getElementById("status"), bellDot = document.getElementById("belldot");
@@ -406,13 +335,7 @@
   const sndKey = () => burst({ dur: .03, freq: 2400, q: .8, gain: .45, decay: .05 });
   const sndBack = () => burst({ dur: .03, freq: 1500, q: 1, gain: .3, decay: .05 });
   const sndLock = () => burst({ dur: .02, freq: 900, q: 2, gain: .25, decay: .03 });
-  // margin bell — a bright resonant "chee-riin"
-  const sndBell = () => {
-    burst({ dur: .012, freq: 5200, q: 1, type: "highpass", gain: .22, decay: .02 }); // clapper tap
-    tone({ freq: 1190, dur: .6, gain: .3 });
-    tone({ freq: 1790, dur: .5, gain: .15 });
-    tone({ freq: 2660, dur: .34, gain: .07 });
-  };
+  const sndBell = () => { burst({ dur: .012, freq: 5200, q: 1, type: "highpass", gain: .22, decay: .02 }); tone({ freq: 1190, dur: .6, gain: .3 }); tone({ freq: 1790, dur: .5, gain: .15 }); tone({ freq: 2660, dur: .34, gain: .07 }); };
   function sndCR() { burst({ dur: .16, freq: 600, q: .5, type: "lowpass", gain: .3, decay: .18 }); setTimeout(() => burst({ dur: .04, freq: 1200, q: 1, gain: .4, decay: .06 }), 130); }
   function sndLF() { burst({ dur: .025, freq: 1800, q: 1.5, gain: .35, decay: .03 }); setTimeout(() => burst({ dur: .025, freq: 1400, q: 1.5, gain: .28, decay: .03 }), 55); }
   function sndShift() { burst({ dur: .05, freq: 360, q: .6, type: "lowpass", gain: .4, decay: .07 }); setTimeout(() => burst({ dur: .03, freq: 1600, q: 1.4, gain: .32, decay: .04 }), 32); }
@@ -421,12 +344,11 @@
 
   // ---- startup ----
   const overlay = document.getElementById("overlay");
-  function layoutAll() { layout(); layoutMech(); }
-  overlay.addEventListener("click", () => {
-    overlay.classList.add("hide"); const c = ac(); if (c.resume) c.resume();
-    layoutAll(); updateStatus();
-  }, { once: true });
+  function layoutAll() { layout(); positionCarriage(); layoutLid(); }
+  overlay.addEventListener("click", () => { overlay.classList.add("hide"); const c = ac(); if (c.resume) c.resume(); layoutAll(); updateStatus(); }, { once: true });
   let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(layoutAll, 120); });
+  // re-run layout whenever the machine actually gets/changes its size (preview viewport can settle late)
+  if (window.ResizeObserver) { const ro = new ResizeObserver(() => { clearTimeout(rt); rt = setTimeout(layoutAll, 60); }); ro.observe(document.querySelector(".machine")); }
   layoutAll(); if (document.fonts && document.fonts.ready) document.fonts.ready.then(layoutAll);
   requestAnimationFrame(frame);
 })();
