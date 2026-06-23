@@ -20,7 +20,16 @@
       </div>
     </div>
 
-    <div class="lid"><canvas id="lid" aria-hidden="true"></canvas></div>
+    <div class="lid">
+      <canvas id="lid" aria-hidden="true"></canvas>
+      <!-- 行間（line-height）スイッチ：上から 青=1.0 / 白=1.5 / 赤=2.0。LFの行送り量が変わる -->
+      <div class="lh-switch" id="lhSwitch" role="group" aria-label="行間 line-height">
+        <span class="lh-knob" id="lhKnob" aria-hidden="true"></span>
+        <button class="lh blue"  type="button" data-lh="1"   title="Single 1.0" aria-label="Single 1.0"></button>
+        <button class="lh white" type="button" data-lh="1.5" title="1.5" aria-label="1.5"></button>
+        <button class="lh red"   type="button" data-lh="2"   title="Double 2.0" aria-label="Double 2.0"></button>
+      </div>
+    </div>
 
     <div class="cover">
       <div class="logo"><span>✈ </span>AIR MAIL</div>
@@ -34,6 +43,9 @@
     </div>
     <div class="status" id="status">行 1 · 桁 1 <span class="bell-dot" id="belldot"></span></div>
   </div>
+
+  <!-- 用紙解放時：印字された紙を画面中央に提示（長い紙はスクロール）。クリック/Escで戻る -->
+  <div id="sheetView" class="hide" aria-hidden="true"></div>
 
   <div class="overlay" id="overlay"><div><b>AIR MAIL</b>クリックして開始（音 ON・キー入力受付）</div></div>
 

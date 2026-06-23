@@ -20,16 +20,20 @@
   const codes = new Set(LAYOUT.rows.flat().map((k) => k.code));
 
   // ---- paper geometry (the paper is a wide sheet drawn at 1 CSS px = 1 unit) ----
-  const FS = 17, ROWH = Math.round(FS * 1.5), GAP = 8, VIS_ROWS = 10, PLATEN_H = 10;
+  const FS = 17, ROWH = Math.round(FS * 1.5), GAP = 8, VIS_ROWS = 10, PLATEN_H = 6;
   const FONT = `${FS}px "Courier Prime","Courier New",monospace`;
   // equal margins on both sides of the text; the print point stays at the deck centre
-  let charW = FS * 0.6, padL = 48, padR = 48, pageW = 0, pageH = 0, printLineY = 0, platenTopY = 0;
+  let charW = FS * 0.6, padL = 48, padR = 48, pageW = 0, pageH = 0, curH = 0, printLineY = 0, platenTopY = 0;
 
   // ---- render state ----
   const stamps = [];                 // {row,col,ch,jx,jy,a,rot}
   let fanStrike = null;              // which typebar is striking {i,t}
-  let caretVisCol = 0, caretVisRow = 0;
+  let caretVisCol = 0, caretVisY = 0;   // eased carriage column and vertical scroll (px)
+  let colTarget = 0, stepGen = 0;    // carriage steps to colTarget AFTER the hammer strikes (escapement)
   let released = false, relAmt = 0;
+  let lineHeight = 1.5;              // LF spacing factor: 1.0 single / 1.5 / 2.0 double
+  const rowTop = [0];                // cumulative top px per row (depends on the line-height at each LF)
+  const STEP_DELAY = 100;           // ms after a keystrike before the paper steps one character (≈ strike contact)
 
   // ---- view-side input modality (model owns the actual shift state) ----
   let physDown = false, latch = false;
@@ -45,36 +49,44 @@
   const deck = document.querySelector(".deck");
   const carriage = document.getElementById("carriage");
   const paperFrame = carriage.querySelector(".paper-frame");
+  const sheetView = document.getElementById("sheetView");
   const rrect = (c, x, y, w, h, r) => { c.beginPath(); if (c.roundRect) c.roundRect(x, y, w, h, r); else c.rect(x, y, w, h); };
   const colToX = (col) => padL + col * charW;
+  const lineAdvance = () => Math.round(FS * lineHeight);   // px the paper feeds up per LF
   const rowToY = (row) => {
-    const norm = printLineY + (row - caretVisRow) * ROWH;
+    const top = rowTop[row] != null ? rowTop[row] : (rowTop[rowTop.length - 1] || 0);
+    const norm = printLineY + (top - caretVisY);
     if (relAmt <= 0) return norm;
-    const rel = (FS + 10) + row * ROWH;          // released: show the page from the top
+    const rel = (FS + 10) + top;                  // released: show the page from the top
     return norm + (rel - norm) * relAmt;
   };
 
   // ---- paper canvas layout ----
   function layout() {
-    const dpr = Math.min(devicePixelRatio || 1, 2);
     ctx.font = FONT; charW = ctx.measureText("M").width || FS * 0.6;
     padL = 48; padR = 48;        // equal margins both sides; positionCarriage keeps col0 at the deck centre
     pageW = Math.round(padL + COLS * charW + padR);
     printLineY = 8 + (VIS_ROWS - 1) * ROWH + FS;
-    platenTopY = printLineY + 6;
+    platenTopY = printLineY + 2;
     pageH = platenTopY + PLATEN_H;
-    cv.style.width = pageW + "px"; cv.style.height = pageH + "px";
-    cv.width = Math.round(pageW * dpr); cv.height = Math.round(pageH * dpr);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.textBaseline = "alphabetic"; ctx.textAlign = "left"; ctx.font = FONT;
+    setCanvasH(pageH);                    // canvas backing + ctx (grows when the released sheet needs > VIS_ROWS rows)
     deck.style.height = pageH + "px";
+  }
+  // size the paper canvas to height h (CSS px): normal view uses pageH, the released sheet grows to fit all rows
+  function setCanvasH(h) {
+    const dpr = Math.min(devicePixelRatio || 1, 2);
+    curH = h;
+    cv.style.width = pageW + "px"; cv.style.height = h + "px";
+    cv.width = Math.round(pageW * dpr); cv.height = Math.round(h * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.textBaseline = "alphabetic"; ctx.textAlign = "left"; ctx.font = FONT;
   }
 
   function drawPaper() {
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cv.width, cv.height); ctx.restore();
     ctx.font = FONT;
-    ctx.fillStyle = "#f3ecdb"; ctx.fillRect(0, 0, pageW, pageH);                 // the sheet
+    ctx.fillStyle = "#f3ecdb"; ctx.fillRect(0, 0, pageW, curH);                 // the sheet (full current height)
     ctx.fillStyle = "rgba(0,0,0,.05)"; ctx.fillRect(0, 0, pageW, 6);             // faint top edge
-    const clipBottom = platenTopY + (pageH - platenTopY) * relAmt;              // released: reveal whole page
+    const clipBottom = platenTopY + (curH - platenTopY) * relAmt;              // released: reveal the whole page
     ctx.save(); ctx.beginPath(); ctx.rect(0, 0, pageW, clipBottom); ctx.clip();
     for (const s of stamps) {
       const y = rowToY(s.row); if (y < -ROWH || y > clipBottom + ROWH) continue;
@@ -83,12 +95,12 @@
       ctx.fillStyle = `rgba(43,42,38,${s.a})`; ctx.fillText(s.ch, 0, 0); ctx.restore();
     }
     if (relAmt < 0.5) {
-      const cx = colToX(tw.caret.col), cy = rowToY(tw.caret.row);
+      const cx = colToX(colTarget), cy = rowToY(tw.caret.row);   // caret sits at the print point (carriage target)
       ctx.fillStyle = "#c0392b"; ctx.globalAlpha = .9 * (1 - relAmt * 2); ctx.fillRect(cx, cy + 4, charW, 2); ctx.globalAlpha = 1;
     }
     ctx.restore();
-    // platen roller along the bottom (fades out when the paper is released)
-    if (relAmt < 1) {
+    // platen roller along the bottom (fades out when the paper is released; never on the tall released sheet)
+    if (relAmt < 1 && curH === pageH) {
       ctx.globalAlpha = 1 - relAmt;
       const g = ctx.createLinearGradient(0, platenTopY, 0, pageH);
       g.addColorStop(0, "#3a3a31"); g.addColorStop(.5, "#26261f"); g.addColorStop(1, "#15140f");
@@ -112,6 +124,7 @@
     ctxL.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
   function positionCarriage() {
+    if (released) return;                       // while released the sheet is detached & centred on the screen
     carriage.style.transform = "translateX(0px)";
     const dr = deck.getBoundingClientRect();
     carriage.style.left = (dr.width / 2 - paperFrame.offsetLeft - padL) + "px";
@@ -120,10 +133,12 @@
     if (!lidW) return;
     ctxL.clearRect(0, 0, lidW, lidH);
     ctxL.globalAlpha = 1 - relAmt;
-    const apexX = lidW / 2, apexY = 6;               // print point at the lid top-centre
-    const R = lidH - 12, ri = R * 0.22;
+    const apexX = lidW / 2, apexY = 4;               // strike point at the lid top-centre (under the print point)
+    const R = lidH - 16, ri = R * 0.22;              // big folding fan (lid raised ~1.5x in CSS)
     const PHI = 54 * Math.PI / 180, A0 = Math.PI / 2 - PHI, A1 = Math.PI / 2 + PHI;
     const now = performance.now();
+    const STRIKE_MS = 200;
+    const struck = (fanStrike && now - fanStrike.t < STRIKE_MS) ? fanStrike.i : -1;
     const aOf = (i) => Math.PI / 2 - PHI * (fanN > 1 ? (2 * i / (fanN - 1) - 1) : 0);
     const pt = (a, r) => ({ x: apexX + r * Math.cos(a), y: apexY + r * Math.sin(a) });
 
@@ -135,14 +150,13 @@
     ctxL.strokeStyle = "rgba(255,255,255,.07)"; ctxL.lineWidth = 2;
     ctxL.beginPath(); ctxL.arc(apexX, apexY, R, A0, A1); ctxL.stroke();
 
-    // typebars + resting silver slug heads on the outer arc
+    // typebars + resting silver slug heads on the outer arc (the struck arm is drawn swinging, below)
     for (let i = 0; i < fanN; i++) {
+      if (i === struck) continue;
       const a = aOf(i), inner = pt(a, ri), s = pt(a, R);
-      const on = fanStrike && fanStrike.i === i && (now - fanStrike.t) < 170;
-      ctxL.strokeStyle = on ? "rgba(195,190,175,.95)" : "rgba(150,144,128,.55)";
-      ctxL.lineWidth = on ? 2 : 1.2;
+      ctxL.strokeStyle = "rgba(150,144,128,.55)"; ctxL.lineWidth = 1.2;
       ctxL.beginPath(); ctxL.moveTo(inner.x, inner.y); ctxL.lineTo(s.x, s.y); ctxL.stroke();
-      if (!on) { ctxL.fillStyle = "#d2d5d7"; ctxL.beginPath(); ctxL.arc(s.x, s.y, 2.3, 0, Math.PI * 2); ctxL.fill(); }
+      ctxL.fillStyle = "#d2d5d7"; ctxL.beginPath(); ctxL.arc(s.x, s.y, 2.7, 0, Math.PI * 2); ctxL.fill();
     }
     // hub (the fan handle) that seats the typebars, at the print point
     const hcY = apexY + 5;
@@ -152,31 +166,32 @@
     ctxL.fillStyle = hg; ctxL.fill();
     ctxL.strokeStyle = "rgba(210,205,190,.55)"; ctxL.lineWidth = 1.4;
     ctxL.beginPath(); ctxL.arc(apexX, hcY, ri, 0, Math.PI); ctxL.stroke();
-    // struck typebar swings its silver head up to the print point
-    if (fanStrike) {
-      const tt = (now - fanStrike.t) / 170;
+    // struck typebar: the whole arm swings up from its rest angle to the print point (bright, clearly visible)
+    if (struck >= 0) {
+      const tt = (now - fanStrike.t) / STRIKE_MS;
       if (tt < 1) {
-        const a = aOf(fanStrike.i), f = Math.sin(Math.PI * tt), s = pt(a, R);
-        const x = s.x + (apexX - s.x) * f, y = s.y + (apexY - s.y) * f;
-        ctxL.fillStyle = "#eef1f3"; ctxL.beginPath(); ctxL.arc(x, y, 2.8, 0, Math.PI * 2); ctxL.fill();
-        if (f > 0.82) { ctxL.fillStyle = `rgba(60,55,48,${(f - 0.82) / 0.18 * 0.5})`; ctxL.beginPath(); ctxL.arc(apexX, apexY, 4.5, 0, Math.PI * 2); ctxL.fill(); }
+        const aRest = aOf(struck), f = Math.sin(Math.PI * tt);
+        const rest = pt(aRest, R), inner = pt(aRest, ri);
+        const sx = rest.x + (apexX - rest.x) * f, sy = rest.y + (apexY - rest.y) * f;     // slug rises to the print point
+        ctxL.strokeStyle = "rgba(228,224,208,.97)"; ctxL.lineWidth = 2.6;                  // arm
+        ctxL.beginPath(); ctxL.moveTo(inner.x, inner.y); ctxL.lineTo(sx, sy); ctxL.stroke();
+        ctxL.fillStyle = "#eef1f3"; ctxL.beginPath(); ctxL.arc(sx, sy, 3.6, 0, Math.PI * 2); ctxL.fill();
+        if (f > 0.8) { ctxL.fillStyle = `rgba(70,64,56,${(f - 0.8) / 0.2 * 0.55})`; ctxL.beginPath(); ctxL.arc(apexX, apexY, 5, 0, Math.PI * 2); ctxL.fill(); }
       } else fanStrike = null;
     }
     ctxL.globalAlpha = 1;
   }
 
   function frame() {
-    const tc = tw.caret.col, tr = tw.caret.row;
-    if (reduce) { caretVisCol = tc; caretVisRow = tr; relAmt = released ? 1 : 0; }
+    const colT = colTarget, yT = rowTop[tw.caret.row] || 0;
+    if (reduce) { caretVisCol = colT; caretVisY = yT; relAmt = released ? 1 : 0; }
     else {
-      caretVisCol += (tc - caretVisCol) * 0.4; caretVisRow += (tr - caretVisRow) * 0.32;
-      if (Math.abs(tc - caretVisCol) < 0.01) caretVisCol = tc;
-      if (Math.abs(tr - caretVisRow) < 0.01) caretVisRow = tr;
+      caretVisCol += (colT - caretVisCol) * 0.4; caretVisY += (yT - caretVisY) * 0.32;
+      if (Math.abs(colT - caretVisCol) < 0.01) caretVisCol = colT;
+      if (Math.abs(yT - caretVisY) < 0.5) caretVisY = yT;
       const rt = released ? 1 : 0; relAmt += (rt - relAmt) * 0.18; if (Math.abs(rt - relAmt) < 0.01) relAmt = rt;
     }
-    const relX = padL - pageW / 2;                                    // released: centre the whole sheet on screen
-    const x = (-caretVisCol * charW) * (1 - relAmt) + relX * relAmt;
-    carriage.style.transform = `translateX(${x.toFixed(2)}px)`;        // slides while typing; sheet centred when released
+    carriage.style.transform = `translateX(${(-caretVisCol * charW * (1 - relAmt)).toFixed(2)}px)`; // slides while typing
     drawPaper(); drawFan();
     requestAnimationFrame(frame);
   }
@@ -222,15 +237,26 @@
   }
   function emitChar(code) {
     const res = tw.pressKey(code);
-    if (res.printed) { addStamp(res); fanStrike = { i: fanIndex.get(code) || 0, t: performance.now() }; sndKey(); if (res.bell) { flashBell(); sndBell(); } }
+    if (res.printed) {
+      colTarget = res.col;                                       // this char's slot is at the print point
+      addStamp(res);                                             // the char appears where the hammer strikes
+      fanStrike = { i: fanIndex.get(code) || 0, t: performance.now() };
+      sndKey(); if (res.bell) { flashBell(); sndBell(); }
+      const stepTo = res.col + 1, gen = stepGen;
+      setTimeout(() => { if (gen === stepGen && stepTo > colTarget) colTarget = stepTo; }, STEP_DELAY); // step after the strike
+    }
     else if (res.locked) sndLock();
     if (latch && !physDown) { latch = false; syncShift(); }
     updateStatus();
   }
-  function doSpace() { const r = tw.space(); if (r.locked) sndLock(); else { sndKey(); if (r.bell) { flashBell(); sndBell(); } } updateStatus(); }
-  function doBackspace() { if (tw.backspace().moved) sndBack(); updateStatus(); }
-  function doCR() { tw.carriageReturn(); sndCR(); swingLever(); updateStatus(); }
-  function doLF() { tw.lineFeed(); sndLF(); leverFront(); updateStatus(); }
+  function doSpace() { const r = tw.space(); if (r.locked) sndLock(); else { sndKey(); if (r.bell) { flashBell(); sndBell(); } colTarget = tw.caret.col; } updateStatus(); }
+  function doBackspace() { if (tw.backspace().moved) { sndBack(); stepGen++; colTarget = tw.caret.col; } updateStatus(); }
+  function doCR() { tw.carriageReturn(); stepGen++; colTarget = tw.caret.col; sndCR(); swingLever(); updateStatus(); }
+  function doLF() {
+    const prev = tw.caret.row; tw.lineFeed(); const r = tw.caret.row;
+    if (rowTop[r] == null) rowTop[r] = rowTop[prev] + lineAdvance();   // feed up by the current line-height
+    sndLF(); leverFront(); updateStatus();
+  }
 
   // ---- shift visuals ----
   function syncShift() { tw.setShiftHeld(physDown || latch); updateShiftVisual(); }
@@ -300,13 +326,43 @@
   function endLever() { if (!lvOn) return; lvOn = false; try { leverEl.releasePointerCapture(lvPid); } catch (_) {} if (!lvFired) { doCR(); doLF(); } }
   leverEl.addEventListener("pointerup", endLever);
   leverEl.addEventListener("pointercancel", endLever);
+  // bottom px of the lowest content row — used to size the released sheet so all typed lines show
+  function contentBottom() {
+    let mr = tw.caret.row;
+    for (const s of stamps) if (s.row > mr) mr = s.row;
+    return rowTop[mr] || 0;
+  }
   function toggleRelease() {
     released = !released;
     releaseEl.classList.toggle("pulled", released);
     releaseEl.setAttribute("aria-pressed", String(released));
     document.body.classList.toggle("released", released);
+    if (released) {                                                      // present the sheet centred on the screen
+      const need = Math.round((FS + 10) + contentBottom() + FS + 12);    // grow to fit all rows (beyond VIS_ROWS)
+      setCanvasH(Math.max(pageH, need));
+      sheetView.appendChild(paperFrame);
+      sheetView.classList.remove("hide");
+    } else {                                                            // put it back into the machine
+      sheetView.classList.add("hide");
+      carriage.insertBefore(paperFrame, releaseEl);
+      setCanvasH(pageH);
+      positionCarriage();
+    }
     sndRelease();
   }
+  sheetView.addEventListener("click", () => { if (released) toggleRelease(); });   // click the sheet to put it back
+
+  // ---- line-height switch (blue 1.0 / white 1.5 / red 2.0) — a 3-position switch; flipping it changes LF spacing ----
+  const lhSwitch = document.getElementById("lhSwitch"), lhKnob = document.getElementById("lhKnob");
+  function positionKnob() { const a = lhSwitch.querySelector(".lh.active"); if (a && a.offsetParent) lhKnob.style.top = a.offsetTop + "px"; }
+  function setLineHeight(v, click) {
+    lineHeight = v;
+    lhSwitch.querySelectorAll(".lh").forEach((b) => b.classList.toggle("active", parseFloat(b.dataset.lh) === v));
+    positionKnob();
+    if (click) sndSwitch();                       // "pachi" detent click on a flip
+  }
+  lhSwitch.querySelectorAll(".lh").forEach((b) => b.addEventListener("click", () => setLineHeight(parseFloat(b.dataset.lh), true)));
+  setLineHeight(lineHeight);
   releaseEl.addEventListener("click", toggleRelease);
   function swingLever() { leverEl.classList.remove("front"); leverEl.classList.add("swing"); setTimeout(() => leverEl.classList.remove("swing"), 240); }
   function leverFront() { leverEl.classList.remove("swing"); leverEl.classList.add("front"); setTimeout(() => leverEl.classList.remove("front"), 240); }
@@ -353,16 +409,18 @@
     tone({ freq: 1986, dur: .16, gain: .10 });                                         // lower partial
     tone({ freq: 10200, dur: .10, gain: .045 });                                       // high shimmer
   };
-  // Enter / carriage return — short cash-register "ching" (modelled on レジ: clack then a bright inharmonic bell ~6674/10510Hz)
-  function sndCR() {
-    burst({ dur: .03, freq: 2600, q: .7, gain: .5, decay: .035 });                     // ka — key/drawer clack
-    burst({ dur: .015, freq: 700, q: .5, type: "lowpass", gain: .3, decay: .02 });     //      clack body
-    const b = .012;                                                                    // ching a hair after the clack
-    tone({ freq: 6674, dur: .22, gain: .34, t: b });                                   // bright bell (dominant partial)
-    tone({ freq: 10510, dur: .16, gain: .18, t: b });                                  // shimmer partial (sample is bright)
-    tone({ freq: 3050, dur: .18, gain: .12, t: b });                                   // body partial
-    tone({ freq: 3950, dur: .13, gain: .07, type: "triangle", t: b });
+  // one cash-register "ching": a clack then a bright inharmonic bell (modelled on レジ ~6674/10510Hz)
+  function regChing(t0, gs) {
+    burst({ dur: .03, freq: 2600, q: .7, gain: .5 * gs, decay: .035, t: t0 });         // ka — key/drawer clack
+    burst({ dur: .015, freq: 700, q: .5, type: "lowpass", gain: .3 * gs, decay: .02, t: t0 });
+    const b = t0 + .012;                                                               // ching a hair after the clack
+    tone({ freq: 6674, dur: .22, gain: .34 * gs, t: b });                              // bright bell (dominant partial)
+    tone({ freq: 10510, dur: .16, gain: .18 * gs, t: b });                             // shimmer partial (sample is bright)
+    tone({ freq: 3050, dur: .18, gain: .12 * gs, t: b });                              // body partial
+    tone({ freq: 3950, dur: .13, gain: .07 * gs, type: "triangle", t: b });
   }
+  // Enter / carriage return — two overlaid chings ("chin-chin")
+  function sndCR() { regChing(0, 1); regChing(.08, .82); }
   function sndLF() { burst({ dur: .025, freq: 1800, q: 1.5, gain: .35, decay: .03 }); setTimeout(() => burst({ dur: .025, freq: 1400, q: 1.5, gain: .28, decay: .03 }), 55); }
   function sndShift() { burst({ dur: .05, freq: 360, q: .6, type: "lowpass", gain: .4, decay: .07 }); setTimeout(() => burst({ dur: .03, freq: 1600, q: 1.4, gain: .32, decay: .04 }), 32); }
   function sndShiftUp() { burst({ dur: .04, freq: 300, q: .6, type: "lowpass", gain: .28, decay: .05 }); }
@@ -385,10 +443,23 @@
     src.connect(hp); hp.connect(bp); bp.connect(g); g.connect(out());
     src.start(now); src.stop(now + dur + .02);
   }
+  // "パチッ" — crisp toggle-switch detent click (line-height switch)
+  function sndSwitch() {
+    burst({ dur: .015, freq: 2800, q: 1.2, gain: .55, decay: .016 });                       // snap
+    burst({ dur: .02, freq: 850, q: 2, gain: .3, decay: .025, t: .006 });                    // body tick
+  }
 
   // ---- startup ----
   const overlay = document.getElementById("overlay");
-  function layoutAll() { layout(); positionCarriage(); layoutLid(); }
+  // map each character key to a fan arm by its on-screen x (left key → left arm, right key → right arm)
+  function buildFanOrder() {
+    const items = fanCodes.map((c) => { const el = keyMap.get(c), r = el && el.getBoundingClientRect(); return { c, x: r ? r.left + r.width / 2 : NaN }; });
+    if (items.some((it) => !isFinite(it.x))) return;     // keyboard not laid out yet — keep current order
+    items.sort((a, b) => a.x - b.x);
+    fanIndex.clear();
+    items.forEach((it, i) => fanIndex.set(it.c, i));
+  }
+  function layoutAll() { layout(); positionCarriage(); layoutLid(); buildFanOrder(); positionKnob(); }
   overlay.addEventListener("click", () => { overlay.classList.add("hide"); const c = ac(); if (c.resume) c.resume(); layoutAll(); updateStatus(); }, { once: true });
   let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(layoutAll, 120); });
   // re-run layout whenever the machine actually gets/changes its size (preview viewport can settle late)

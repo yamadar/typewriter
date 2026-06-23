@@ -25,13 +25,13 @@
   }
 
   /* 上段：キャリッジ（左CRレバー＋紙＋右用紙解放レバー）が一体で横移動。デッキは窓としてクリップ */
-  .deck{position:relative;overflow:hidden;margin-bottom:6px}
+  .deck{position:relative;overflow:hidden;margin-bottom:2px}
   .carriage{position:absolute;top:0;left:0;display:flex;align-items:flex-end;gap:8px;will-change:transform}
   .paper-frame{position:relative;flex:0 0 auto;background:#f3ecdb;border-radius:4px 4px 3px 3px;box-shadow:0 8px 18px rgba(0,0,0,.45);overflow:hidden}
   canvas#paper{display:block}
 
   /* CRレバー（紙の左端の左）：右へ引く=CR ／ 手前へ引く=LF ／ クリック=CR+LF */
-  .lever-btn{appearance:none;border:0;background:none;cursor:pointer;width:34px;height:86px;position:relative;flex:0 0 auto;margin-bottom:8px}
+  .lever-btn{appearance:none;border:0;background:none;cursor:pointer;width:34px;height:86px;position:relative;flex:0 0 auto;margin-bottom:8px;transition:opacity .25s}
   .lever-arm{position:absolute;left:50%;bottom:6px;width:10px;height:74px;
     background:linear-gradient(90deg,var(--chrome-3),var(--chrome-1),var(--chrome-3));border-radius:6px;
     transform-origin:50% 100%;transform:translateX(-50%) rotate(-14deg);transition:transform .14s cubic-bezier(.2,.7,.3,1);box-shadow:0 2px 4px rgba(0,0,0,.35)}
@@ -41,7 +41,7 @@
   .lever-pivot{position:absolute;left:50%;bottom:2px;transform:translateX(-50%);width:16px;height:16px;border-radius:50%;background:radial-gradient(circle at 35% 30%,var(--chrome-1),var(--chrome-3))}
 
   /* 用紙解放レバー（紙の右端の右）：引くと回転 */
-  .release-btn{appearance:none;border:0;background:none;cursor:pointer;width:52px;height:34px;position:relative;flex:0 0 auto;margin-bottom:12px}
+  .release-btn{appearance:none;border:0;background:none;cursor:pointer;width:52px;height:34px;position:relative;flex:0 0 auto;margin-bottom:12px;transition:opacity .25s}
   .release-arm{position:absolute;left:7px;top:50%;width:38px;height:8px;border-radius:5px;
     background:linear-gradient(180deg,var(--chrome-1),var(--chrome-3));
     transform-origin:0 50%;transform:translateY(-50%) rotate(-8deg);
@@ -54,6 +54,15 @@
   .cover{margin-top:0;background:linear-gradient(180deg,var(--cover),var(--cover-2));border-radius:14px 14px 12px 12px;padding:8px 12px 12px;box-shadow:0 4px 10px rgba(0,0,0,.25),inset 0 1px 0 rgba(255,255,255,.7);transition:opacity .3s}
   /* 用紙解放中：キーボードを暗くして印字された紙を見せる */
   body.released .cover{opacity:.22}
+  /* 用紙解放：本体を減光し、レバー類を隠して、紙を中央のオーバーレイに提示 */
+  body.released .machine{filter:brightness(.72)}
+  body.released .lever-btn,body.released .release-btn{opacity:0;pointer-events:none}
+  /* 印字された紙の提示面（fixed・中央寄せ・長い紙は縦スクロール） */
+  #sheetView{position:fixed;inset:0;z-index:60;display:flex;overflow:auto;padding:24px;background:rgba(16,12,10,.28);-webkit-overflow-scrolling:touch}
+  #sheetView.hide{display:none}   /* id selector beats the shared .hide rule, so hide it explicitly */
+  #sheetView .paper-frame{cursor:default}
+  #sheetView .paper-frame{margin:auto;box-shadow:0 24px 70px rgba(0,0,0,.6),0 2px 8px rgba(0,0,0,.45);animation:sheet-in .28s cubic-bezier(.2,.7,.3,1)}
+  @keyframes sheet-in{from{opacity:.3;transform:scale(.965)}to{opacity:1;transform:scale(1)}}
   .logo{font-weight:700;letter-spacing:.28em;font-size:14px;color:var(--accent);text-align:left;padding:2px 4px 8px}
   .logo span{color:#3a3a36}
 
@@ -92,10 +101,25 @@
   .shift-on .key.dual b{opacity:.4}
   /* 機構（各キーのアーム→印字点へ収束）：マシン全体に重ねる透明オーバーレイ */
   /* 蓋：紙とキーボードの間の本体パネル。canvas に扇型の穴を描き、アームが見える */
-  .lid{position:relative;height:112px;margin:6px 0 8px;border-radius:7px;
+  .lid{position:relative;height:168px;margin:2px 0 8px;border-radius:7px;
     background:linear-gradient(180deg,#b23529,#8e281e);
     box-shadow:inset 0 2px 7px rgba(0,0,0,.45),inset 0 -1px 0 rgba(255,255,255,.06),0 1px 0 rgba(0,0,0,.3)}
   #lid{display:block;width:100%;height:100%}
+  /* 行間スイッチ（蓋の右端・扇の脇）：赤=1.0 / 白=1.5 / 青=2.0 */
+  .lh-switch{position:absolute;right:7px;top:50%;transform:translateY(-50%);
+    display:flex;flex-direction:column;gap:10px;z-index:8;
+    padding:9px 6px 9px 19px;border-radius:16px;background:rgba(0,0,0,.32);box-shadow:inset 0 1px 3px rgba(0,0,0,.6),0 1px 0 rgba(255,255,255,.06)}
+  .lh{width:15px;height:15px;border-radius:50%;border:2px solid rgba(0,0,0,.4);padding:0;cursor:pointer;
+    opacity:.5;transition:opacity .15s,transform .15s,box-shadow .15s}
+  .lh.red{background:#d8392c}
+  .lh.white{background:#f1ece0}
+  .lh.blue{background:#2f6ad1}
+  .lh:hover{opacity:.85}
+  .lh.active{opacity:1;transform:scale(1.14);box-shadow:0 0 0 2px rgba(255,255,255,.85)}
+  /* sliding chrome handle in the left lane = the switch you flip */
+  .lh-knob{position:absolute;left:4px;top:38px;width:9px;height:19px;border-radius:5px;pointer-events:none;
+    background:linear-gradient(180deg,#eef0ec,#9aa0a0);box-shadow:0 1px 2px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.75);
+    transition:top .13s cubic-bezier(.2,.8,.25,1.3)}
 
   /* ステータス */
   .strip{width:min(800px,100%);display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:space-between;font-size:12px;color:var(--label-dim)}
