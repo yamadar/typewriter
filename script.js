@@ -202,82 +202,81 @@
     const aOf = (i) => Math.PI / 2 - PHI * (fanN > 1 ? (2 * i / (fanN - 1) - 1) : 0);
     const pt = (a, r) => ({ x: apexX + r * Math.cos(a), y: apexY + r * Math.sin(a) });
 
-    // ===== layered cover: ① the red .lid background is the COVER, with a scallop-shell hole punched in it =====
-    // through the hole, from back to front: ③ black base → ② silver typebars + chrome segment + inked ribbon.
-    // everything is CLIPPED to the hole, so the parts of the mechanism/ribbon behind the cover are not drawn.
-    const SC = 14, amp = R * 0.045;                                          // scalloped rim (shell edge)
-    const edgeR = (t) => R - amp + amp * Math.cos(2 * Math.PI * SC * t);
-    const shell = new Path2D(); shell.moveTo(apexX, apexY);
-    for (let k = 0; k <= 140; k++) { const t = k / 140, a = A0 + (A1 - A0) * t, p = pt(a, edgeR(t)); shell.lineTo(p.x, p.y); }
-    shell.closePath();
+    // ===== layered cover (a sideways "C"): ① red .lid = COVER wrapping the bottom + sides, OPEN at the top-centre =====
+    // through it, back→front: ③ black base → ② silver typebars + chrome segment + inked ribbon — all CLIPPED to the opening.
+    // the opening is a narrow slot at the top (the arm head pokes up through it toward the paper), flaring wide & rounding off below.
+    const Wtop = R * 0.19, Wmax = lidW * 0.40, midY = apexY + R * 0.76, botY = apexY + R * 0.99;
+    const hole = new Path2D();
+    hole.moveTo(apexX - Wtop, apexY);                                                                                 // top-left of the slot
+    hole.bezierCurveTo(apexX - Wtop * 1.25, apexY + R * 0.34, apexX - Wmax * 0.82, apexY + R * 0.56, apexX - Wmax, midY);  // funnel down & out (sides stay narrow up top)
+    hole.quadraticCurveTo(apexX - Wmax, botY, apexX - Wmax * 0.40, botY + R * 0.02);                                  // round the bottom-left in
+    hole.quadraticCurveTo(apexX, botY + R * 0.05, apexX + Wmax * 0.40, botY + R * 0.02);                              // across the rounded bottom
+    hole.quadraticCurveTo(apexX + Wmax, botY, apexX + Wmax, midY);                                                    // up the bottom-right
+    hole.bezierCurveTo(apexX + Wmax * 0.82, apexY + R * 0.56, apexX + Wtop * 1.25, apexY + R * 0.34, apexX + Wtop, apexY);// funnel up to the slot (right)
+    hole.closePath();
+    const radiateLen = R * 2.05;                                             // typebars long enough to fill the opening
 
     ctxL.save();
-    ctxL.clip(shell);
+    ctxL.clip(hole);
 
     // ③ black base — the dark machine interior behind the basket
     ctxL.fillStyle = "#000"; ctxL.fillRect(0, 0, lidW, lidH);
-    const rg = ctxL.createRadialGradient(apexX, apexY + R * 0.12, ri * 0.4, apexX, apexY, R * 1.04);
-    rg.addColorStop(0, "#211f19"); rg.addColorStop(.62, "#0b0a07"); rg.addColorStop(1, "#000");
+    const rg = ctxL.createRadialGradient(apexX, apexY + R * 0.2, ri * 0.4, apexX, apexY + R * 0.3, R * 1.5);
+    rg.addColorStop(0, "#23211a"); rg.addColorStop(.6, "#0b0a07"); rg.addColorStop(1, "#000");
     ctxL.fillStyle = rg; ctxL.fillRect(0, 0, lidW, lidH);
 
-    // ② silver typebars — the fan of arms radiating from the segment out to the shell rim
+    // ② silver typebars — fan out from the segment to the crescent edge (run past it → clipped)
     for (let i = 0; i < fanN; i++) {
       if (i === struck) continue;
-      const a = aOf(i), inner = pt(a, ri), tip = pt(a, R + amp + 3);
+      const a = aOf(i), inner = pt(a, ri), tip = pt(a, radiateLen);
       const g = ctxL.createLinearGradient(inner.x, inner.y, tip.x, tip.y);
-      g.addColorStop(0, "#70767a"); g.addColorStop(.5, "#ced2d4"); g.addColorStop(1, "#9ca1a3");
+      g.addColorStop(0, "#777d80"); g.addColorStop(.5, "#cfd3d5"); g.addColorStop(1, "#8f9496");
       ctxL.strokeStyle = g; ctxL.lineWidth = 2; ctxL.lineCap = "round";
       ctxL.beginPath(); ctxL.moveTo(inner.x, inner.y); ctxL.lineTo(tip.x, tip.y); ctxL.stroke();
-      const head = pt(a, R - amp - 1);                                      // silver slug head (incl. head = silver), just inside the rim
-      ctxL.fillStyle = "#e7eaeb"; ctxL.beginPath(); ctxL.arc(head.x, head.y, 2.8, 0, Math.PI * 2); ctxL.fill();
     }
 
-    // ② chrome segment / hub that seats the typebars at the print point
-    const hcY = apexY + 5;
-    const hg = ctxL.createLinearGradient(apexX, hcY - ri, apexX, hcY + ri);
-    hg.addColorStop(0, "#d4d7d9"); hg.addColorStop(.5, "#9a9ea0"); hg.addColorStop(1, "#54585a");
-    ctxL.fillStyle = hg; ctxL.beginPath(); ctxL.arc(apexX, hcY, ri, 0, Math.PI); ctxL.closePath(); ctxL.fill();
-    ctxL.strokeStyle = "rgba(245,247,248,.5)"; ctxL.lineWidth = 1.2;
-    ctxL.beginPath(); ctxL.arc(apexX, hcY, ri, 0, Math.PI); ctxL.stroke();
-
-    // ② inked ribbon — crosses the upper basket, the vibrator peaking at the print point; the ends run off under the cover (clipped)
-    {
-      const ribY = apexY + 34, pkY = apexY + 7, tx = 12, hw = lidW;
-      ctxL.lineJoin = "round"; ctxL.lineCap = "round";
-      ctxL.strokeStyle = `rgb(${inkColor})`; ctxL.lineWidth = 7;
-      ctxL.beginPath();
-      ctxL.moveTo(apexX - hw, ribY); ctxL.lineTo(apexX - 48, ribY);
-      ctxL.lineTo(apexX - tx, pkY); ctxL.lineTo(apexX + tx, pkY);
-      ctxL.lineTo(apexX + 48, ribY); ctxL.lineTo(apexX + hw, ribY);
-      ctxL.stroke();
-      ctxL.strokeStyle = "rgba(255,255,255,.13)"; ctxL.lineWidth = 1.5;       // ribbon top edge sheen
-      ctxL.beginPath();
-      ctxL.moveTo(apexX - hw, ribY - 1.7); ctxL.lineTo(apexX - 48, ribY - 1.7);
-      ctxL.lineTo(apexX - tx, pkY - 1.7); ctxL.lineTo(apexX + tx, pkY - 1.7);
-      ctxL.lineTo(apexX + 48, ribY - 1.7); ctxL.lineTo(apexX + hw, ribY - 1.7);
-      ctxL.stroke();
-    }
-
-    // ② struck typebar — the whole silver arm swings up from its rest angle to the print point (over the ribbon)
+    // ② struck typebar — the silver arm swings up to the print point (disappears behind the cover at the top)
     if (struck >= 0) {
       const tt = (now - fanStrike.t) / STRIKE_MS;
       if (tt < 1) {
         const aRest = aOf(struck), f = Math.sin(Math.PI * tt);
-        const rest = pt(aRest, R), inner = pt(aRest, ri);
-        const sx = rest.x + (apexX - rest.x) * f, sy = rest.y + (apexY - rest.y) * f;     // slug rises to the print point
+        const rest = pt(aRest, radiateLen), inner = pt(aRest, ri);
+        const sx = rest.x + (apexX - rest.x) * f, sy = rest.y + (apexY - rest.y) * f;
         const g = ctxL.createLinearGradient(inner.x, inner.y, sx, sy);
         g.addColorStop(0, "#8b9194"); g.addColorStop(.5, "#eef1f3"); g.addColorStop(1, "#c2c7c9");
         ctxL.strokeStyle = g; ctxL.lineWidth = 3; ctxL.lineCap = "round";
         ctxL.beginPath(); ctxL.moveTo(inner.x, inner.y); ctxL.lineTo(sx, sy); ctxL.stroke();
-        ctxL.fillStyle = "#f4f7f9"; ctxL.beginPath(); ctxL.arc(sx, sy, 3.6, 0, Math.PI * 2); ctxL.fill();
+        ctxL.fillStyle = "#f4f7f9"; ctxL.beginPath(); ctxL.arc(sx, sy, 3.4, 0, Math.PI * 2); ctxL.fill();
       } else fanStrike = null;
+    }
+
+    // ② chrome segment — the curved typebar guide at the top-centre (just under the slot)
+    {
+      const segCY = apexY + R * 0.17, segR = R * 0.26;
+      const sgrad = ctxL.createLinearGradient(apexX, segCY - segR, apexX, segCY + segR * 0.4);
+      sgrad.addColorStop(0, "#e9ebec"); sgrad.addColorStop(.5, "#a9adaf"); sgrad.addColorStop(1, "#5b5f61");
+      ctxL.fillStyle = sgrad; ctxL.beginPath(); ctxL.arc(apexX, segCY, segR, 0, Math.PI); ctxL.closePath(); ctxL.fill();
+      ctxL.strokeStyle = "rgba(250,252,253,.5)"; ctxL.lineWidth = 1.2; ctxL.beginPath(); ctxL.arc(apexX, segCY, segR, 0, Math.PI); ctxL.stroke();
+      ctxL.fillStyle = "rgba(40,40,36,.7)";                                  // two seating screws
+      ctxL.beginPath(); ctxL.arc(apexX - segR * 0.42, segCY + 4, 2.4, 0, Math.PI * 2); ctxL.fill();
+      ctxL.beginPath(); ctxL.arc(apexX + segR * 0.42, segCY + 4, 2.4, 0, Math.PI * 2); ctxL.fill();
+    }
+
+    // ② inked ribbon — crosses at the print point; only the part inside the window shows
+    {
+      const spoolY = apexY + R * 0.30, spanX = lidW * 0.34, SLx = apexX - spanX, SRx = apexX + spanX, tx = 14, pkY = apexY + R * 0.07;
+      ctxL.lineJoin = "round"; ctxL.lineCap = "round";
+      ctxL.strokeStyle = `rgb(${inkColor})`; ctxL.lineWidth = 6;
+      ctxL.beginPath(); ctxL.moveTo(SLx, spoolY); ctxL.lineTo(apexX - tx, pkY); ctxL.lineTo(apexX + tx, pkY); ctxL.lineTo(SRx, spoolY); ctxL.stroke();
+      ctxL.strokeStyle = "rgba(255,255,255,.12)"; ctxL.lineWidth = 1.3;
+      ctxL.beginPath(); ctxL.moveTo(SLx, spoolY - 1.4); ctxL.lineTo(apexX - tx, pkY - 1.4); ctxL.lineTo(apexX + tx, pkY - 1.4); ctxL.lineTo(SRx, spoolY - 1.4); ctxL.stroke();
     }
 
     ctxL.restore();
 
-    // the cover's cut edge around the hole: inner shadow + thin highlight → reads as a punched opening in the cover
-    ctxL.strokeStyle = "rgba(0,0,0,.5)"; ctxL.lineWidth = 3.5; ctxL.stroke(shell);
-    ctxL.strokeStyle = "rgba(255,255,255,.09)"; ctxL.lineWidth = 1; ctxL.stroke(shell);
+    // the cover's cut edge: smooth inner shadow + thin highlight → reads as a punched opening
+    ctxL.strokeStyle = "rgba(0,0,0,.5)"; ctxL.lineWidth = 3.5; ctxL.stroke(hole);
+    ctxL.strokeStyle = "rgba(255,255,255,.09)"; ctxL.lineWidth = 1; ctxL.stroke(hole);
     ctxL.globalAlpha = 1;
   }
 
