@@ -103,7 +103,7 @@
     ctx.save(); ctx.beginPath(); ctx.rect(0, 0, pageW, clipBottom); ctx.clip();
     for (const s of stamps) {
       const y = rowToY(s.row); if (y < -ROWH || y > clipBottom + ROWH) continue;
-      const x = colToX(s.col);
+      const x = colToX(s.col) - charW * 0.5;                                    // glyph centred on the print point (shifted left ½ cell)
       ctx.save(); ctx.translate(x + s.jx, y + s.jy); if (s.rot) ctx.rotate(s.rot);
       ctx.fillStyle = `rgba(${s.ink || "43,42,38"},${s.a})`; ctx.fillText(s.ch, 0, 0); ctx.restore();
     }
@@ -117,7 +117,7 @@
   }
   // strike at the print point (drawn on the paper, overlapping it): ribbon apex + guide金具 + slug head on the arm
   function drawStrike() {
-    const px = colToX(caretVisCol) + charW * 0.5, now = performance.now();   // print point = the glyph CENTRE of the cell (not its left edge)
+    const px = colToX(caretVisCol), now = performance.now();         // print point stays at the machine centre; glyphs are stamped centred on it
     const f = (fanStrike && now - fanStrike.t < STRIKE_MS) ? Math.sin(Math.PI * (now - fanStrike.t) / STRIKE_MS) : 0;
     // ribbon apex: the top of the ribbon, held by the guide — narrow trapezoid at rest, pulled to a point on a strike
     const topW = 16 * (1 - f), apY = (printLineY + 3) - 7 * f;
@@ -267,7 +267,7 @@
       if (tt < 1) {
         const thR = thOf(struck), f = Math.sin(Math.PI * tt);
         const restTip = ept(thR, rxOut, ryOut), pivot = ept(thR, rxIn, ryIn);
-        const sx = restTip.x + (apexX + charW * 0.5 - restTip.x) * f, sy = restTip.y + (apexY - restTip.y) * f;   // slug swings to the print point (glyph centre)
+        const sx = restTip.x + (apexX - restTip.x) * f, sy = restTip.y + (apexY - restTip.y) * f;   // slug swings to the print point
         const g = ctxL.createLinearGradient(pivot.x, pivot.y, sx, sy);
         g.addColorStop(0, "#8b9194"); g.addColorStop(.5, "#eef1f3"); g.addColorStop(1, "#c2c7c9");
         ctxL.strokeStyle = g; ctxL.lineWidth = 3; ctxL.lineCap = "round";
