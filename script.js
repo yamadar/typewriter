@@ -117,7 +117,7 @@
   }
   // strike at the print point (drawn on the paper, overlapping it): ribbon apex + guide金具 + slug head on the arm
   function drawStrike() {
-    const px = colToX(caretVisCol), now = performance.now();         // print point (tracks the carriage → stays centred)
+    const px = colToX(caretVisCol) + charW * 0.5, now = performance.now();   // print point = the glyph CENTRE of the cell (not its left edge)
     const f = (fanStrike && now - fanStrike.t < STRIKE_MS) ? Math.sin(Math.PI * (now - fanStrike.t) / STRIKE_MS) : 0;
     // ribbon apex: the top of the ribbon, held by the guide — narrow trapezoid at rest, pulled to a point on a strike
     const topW = 16 * (1 - f), apY = (printLineY + 3) - 7 * f;
@@ -196,16 +196,13 @@
     ctxL.globalAlpha = 1 - relAmt;
     const apexX = lidW / 2, apexY = 4;               // strike point at the lid top-centre (under the print point)
     const R = lidH - 16, ri = R * 0.22;              // big folding fan (lid raised ~1.5x in CSS)
-    const PHI = 75 * Math.PI / 180, A0 = Math.PI / 2 - PHI, A1 = Math.PI / 2 + PHI;   // ~150° spread
     const now = performance.now();
     const struck = (fanStrike && now - fanStrike.t < STRIKE_MS) ? fanStrike.i : -1;
-    const aOf = (i) => Math.PI / 2 - PHI * (fanN > 1 ? (2 * i / (fanN - 1) - 1) : 0);
-    const pt = (a, r) => ({ x: apexX + r * Math.cos(a), y: apexY + r * Math.sin(a) });
 
     // ===== layered cover (a sideways "C"): ① red .lid = COVER wrapping the bottom + sides, OPEN at the top-centre =====
     // through it, back→front: ③ black base → ② silver typebars + chrome segment + inked ribbon — all CLIPPED to the opening.
     // the opening is a narrow slot at the top (the arm head pokes up through it toward the paper), flaring wide & rounding off below.
-    const Wtop = R * 0.19, Wmax = lidW * 0.40, midY = apexY + R * 0.76, botY = apexY + R * 0.99;
+    const Wtop = R * 0.19, Wmax = lidW * 0.40 - 50, midY = apexY + R * 0.76, botY = apexY + R * 0.99;  // opening narrowed ~50px each side
     const hole = new Path2D();
     hole.moveTo(apexX - Wtop, apexY);                                                                                 // top-left of the slot
     hole.bezierCurveTo(apexX - Wtop * 1.25, apexY + R * 0.34, apexX - Wmax * 0.82, apexY + R * 0.56, apexX - Wmax, midY);  // funnel down & out (sides stay narrow up top)
@@ -214,7 +211,6 @@
     hole.quadraticCurveTo(apexX + Wmax, botY, apexX + Wmax, midY);                                                    // up the bottom-right
     hole.bezierCurveTo(apexX + Wmax * 0.82, apexY + R * 0.56, apexX + Wtop * 1.25, apexY + R * 0.34, apexX + Wtop, apexY);// funnel up to the slot (right)
     hole.closePath();
-    const radiateLen = R * 2.05;                                             // typebars long enough to fill the opening
 
     ctxL.save();
     ctxL.clip(hole);
@@ -225,51 +221,59 @@
     rg.addColorStop(0, "#23211a"); rg.addColorStop(.6, "#0b0a07"); rg.addColorStop(1, "#000");
     ctxL.fillStyle = rg; ctxL.fillRect(0, 0, lidW, lidH);
 
-    // ② silver typebars — fan out from the segment to the crescent edge (run past it → clipped)
+    // ---- basket concentric with the chrome segment (A): every typebar is a radius between (A) and an enlarged copy of (A) ----
+    const segCY = apexY + R * 0.06 + 10;                        // (A) centre (lifted up, then the whole basket dropped 10px; ribbon stays)
+    const rxIn = R * 0.40, ryIn = R * 0.26;                     // (A): width = 1.5× a R*0.26 semicircle, same height (half-ellipse)
+    const fanK = 3.3, rxOut = rxIn * fanK, ryOut = ryIn * fanK; // enlarged (A) = the fan's outer rim (the slug arc)
+    const m = 0.40;                                             // fan spread ≈ 134° (narrowed ~30° so fewer bars hide under the cover)
+    const thOf = (i) => (Math.PI - m) - (Math.PI - 2 * m) * (fanN > 1 ? i / (fanN - 1) : 0.5);  // i=0 → left … i=last → right
+    const ept = (th, rx, ry) => ({ x: apexX + rx * Math.cos(th), y: segCY + ry * Math.sin(th) });
+
+    // ② silver typebars — radii from (A) out to the enlarged rim; slug heads land on that rim (run past → clipped)
     for (let i = 0; i < fanN; i++) {
       if (i === struck) continue;
-      const a = aOf(i), inner = pt(a, ri), tip = pt(a, radiateLen);
+      const th = thOf(i), inner = ept(th, rxIn, ryIn), tip = ept(th, rxOut, ryOut);
       const g = ctxL.createLinearGradient(inner.x, inner.y, tip.x, tip.y);
       g.addColorStop(0, "#777d80"); g.addColorStop(.5, "#cfd3d5"); g.addColorStop(1, "#8f9496");
       ctxL.strokeStyle = g; ctxL.lineWidth = 2; ctxL.lineCap = "round";
       ctxL.beginPath(); ctxL.moveTo(inner.x, inner.y); ctxL.lineTo(tip.x, tip.y); ctxL.stroke();
+      ctxL.fillStyle = "#e7eaeb"; ctxL.beginPath(); ctxL.arc(tip.x, tip.y, 2.8, 0, Math.PI * 2); ctxL.fill();
     }
 
-    // ② struck typebar — the silver arm swings up to the print point (disappears behind the cover at the top)
-    if (struck >= 0) {
-      const tt = (now - fanStrike.t) / STRIKE_MS;
-      if (tt < 1) {
-        const aRest = aOf(struck), f = Math.sin(Math.PI * tt);
-        const rest = pt(aRest, radiateLen), inner = pt(aRest, ri);
-        const sx = rest.x + (apexX - rest.x) * f, sy = rest.y + (apexY - rest.y) * f;
-        const g = ctxL.createLinearGradient(inner.x, inner.y, sx, sy);
-        g.addColorStop(0, "#8b9194"); g.addColorStop(.5, "#eef1f3"); g.addColorStop(1, "#c2c7c9");
-        ctxL.strokeStyle = g; ctxL.lineWidth = 3; ctxL.lineCap = "round";
-        ctxL.beginPath(); ctxL.moveTo(inner.x, inner.y); ctxL.lineTo(sx, sy); ctxL.stroke();
-        ctxL.fillStyle = "#f4f7f9"; ctxL.beginPath(); ctxL.arc(sx, sy, 3.4, 0, Math.PI * 2); ctxL.fill();
-      } else fanStrike = null;
-    }
-
-    // ② chrome segment — the curved typebar guide at the top-centre (just under the slot)
+    // ② chrome segment (A) — a wide half-ellipse guide over the bar roots (the struck head passes OVER it, drawn last)
     {
-      const segCY = apexY + R * 0.17, segR = R * 0.26;
-      const sgrad = ctxL.createLinearGradient(apexX, segCY - segR, apexX, segCY + segR * 0.4);
+      const sgrad = ctxL.createLinearGradient(apexX, segCY - ryIn, apexX, segCY + ryIn);
       sgrad.addColorStop(0, "#e9ebec"); sgrad.addColorStop(.5, "#a9adaf"); sgrad.addColorStop(1, "#5b5f61");
-      ctxL.fillStyle = sgrad; ctxL.beginPath(); ctxL.arc(apexX, segCY, segR, 0, Math.PI); ctxL.closePath(); ctxL.fill();
-      ctxL.strokeStyle = "rgba(250,252,253,.5)"; ctxL.lineWidth = 1.2; ctxL.beginPath(); ctxL.arc(apexX, segCY, segR, 0, Math.PI); ctxL.stroke();
+      ctxL.fillStyle = sgrad; ctxL.beginPath(); ctxL.ellipse(apexX, segCY, rxIn, ryIn, 0, 0, Math.PI); ctxL.closePath(); ctxL.fill();
+      ctxL.strokeStyle = "rgba(250,252,253,.5)"; ctxL.lineWidth = 1.3; ctxL.beginPath(); ctxL.ellipse(apexX, segCY, rxIn, ryIn, 0, 0, Math.PI); ctxL.stroke();
       ctxL.fillStyle = "rgba(40,40,36,.7)";                                  // two seating screws
-      ctxL.beginPath(); ctxL.arc(apexX - segR * 0.42, segCY + 4, 2.4, 0, Math.PI * 2); ctxL.fill();
-      ctxL.beginPath(); ctxL.arc(apexX + segR * 0.42, segCY + 4, 2.4, 0, Math.PI * 2); ctxL.fill();
+      ctxL.beginPath(); ctxL.arc(apexX - rxIn * 0.40, segCY + ryIn * 0.45, 2.6, 0, Math.PI * 2); ctxL.fill();
+      ctxL.beginPath(); ctxL.arc(apexX + rxIn * 0.40, segCY + ryIn * 0.45, 2.6, 0, Math.PI * 2); ctxL.fill();
     }
 
     // ② inked ribbon — crosses at the print point; only the part inside the window shows
     {
-      const spoolY = apexY + R * 0.30, spanX = lidW * 0.34, SLx = apexX - spanX, SRx = apexX + spanX, tx = 14, pkY = apexY + R * 0.07;
+      const spoolY = apexY + R * 0.28, spanX = lidW * 0.34, SLx = apexX - spanX, SRx = apexX + spanX, tx = 14, pkY = apexY + R * 0.04;
       ctxL.lineJoin = "round"; ctxL.lineCap = "round";
       ctxL.strokeStyle = `rgb(${inkColor})`; ctxL.lineWidth = 6;
       ctxL.beginPath(); ctxL.moveTo(SLx, spoolY); ctxL.lineTo(apexX - tx, pkY); ctxL.lineTo(apexX + tx, pkY); ctxL.lineTo(SRx, spoolY); ctxL.stroke();
       ctxL.strokeStyle = "rgba(255,255,255,.12)"; ctxL.lineWidth = 1.3;
       ctxL.beginPath(); ctxL.moveTo(SLx, spoolY - 1.4); ctxL.lineTo(apexX - tx, pkY - 1.4); ctxL.lineTo(apexX + tx, pkY - 1.4); ctxL.lineTo(SRx, spoolY - 1.4); ctxL.stroke();
+    }
+
+    // ② struck typebar — drawn LAST so its head passes OVER the segment (A) as it swings up to the print point
+    if (struck >= 0) {
+      const tt = (now - fanStrike.t) / STRIKE_MS;
+      if (tt < 1) {
+        const thR = thOf(struck), f = Math.sin(Math.PI * tt);
+        const restTip = ept(thR, rxOut, ryOut), pivot = ept(thR, rxIn, ryIn);
+        const sx = restTip.x + (apexX + charW * 0.5 - restTip.x) * f, sy = restTip.y + (apexY - restTip.y) * f;   // slug swings to the print point (glyph centre)
+        const g = ctxL.createLinearGradient(pivot.x, pivot.y, sx, sy);
+        g.addColorStop(0, "#8b9194"); g.addColorStop(.5, "#eef1f3"); g.addColorStop(1, "#c2c7c9");
+        ctxL.strokeStyle = g; ctxL.lineWidth = 3; ctxL.lineCap = "round";
+        ctxL.beginPath(); ctxL.moveTo(pivot.x, pivot.y); ctxL.lineTo(sx, sy); ctxL.stroke();
+        ctxL.fillStyle = "#f4f7f9"; ctxL.beginPath(); ctxL.arc(sx, sy, 3.5, 0, Math.PI * 2); ctxL.fill();
+      } else fanStrike = null;
     }
 
     ctxL.restore();
