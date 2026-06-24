@@ -31,13 +31,13 @@
   canvas#paper{display:block}
 
   /* CRレバー（紙の左端の左）：右へ引く=CR ／ 手前へ引く=LF ／ クリック=CR+LF */
-  .lever-btn{appearance:none;border:0;background:none;cursor:pointer;width:42px;height:92px;position:relative;flex:0 0 auto;align-self:flex-start;margin-top:2px;transition:opacity .25s}
+  .lever-btn{appearance:none;border:0;background:none;cursor:pointer;width:42px;height:92px;position:relative;flex:0 0 auto;align-self:flex-start;margin-top:102px}  /* 100px下げる／解放時は即時に消す(トランジションなし) */
   /* 改行レバー：上の支点から左斜め下へ伸びる（先端＝握り） */
   .lever-arm{position:absolute;left:50%;top:8px;width:9px;height:72px;
     background:linear-gradient(90deg,var(--chrome-3),var(--chrome-1),var(--chrome-3));border-radius:5px;
     transform-origin:50% 3px;transform:translateX(-50%) rotate(28deg);transition:transform .45s cubic-bezier(.2,.7,.3,1);box-shadow:0 2px 4px rgba(0,0,0,.35)}
   .lever-arm::after{content:"";position:absolute;bottom:-7px;left:50%;transform:translateX(-50%);width:20px;height:14px;border-radius:8px;background:linear-gradient(180deg,var(--chrome-1),var(--chrome-3));box-shadow:0 2px 3px rgba(0,0,0,.35)}
-  .lever-btn.swing .lever-arm{transform:translateX(-50%) rotate(-34deg)}        /* CR：先端を右へ押す（左斜め下→右へ振る） */
+  .lever-btn.swing .lever-arm{transform:translateX(-50%) rotate(-6deg)}        /* CR：先端を右へ押す＝ほぼ直角（垂直）まで。振りすぎない */
   .lever-btn.front .lever-arm{transform:translateX(-50%) rotate(28deg) translateY(4px)}   /* LF：少し下げる（小さく） */
   .lever-pivot{position:absolute;left:50%;top:4px;transform:translateX(-50%);width:15px;height:15px;border-radius:50%;background:radial-gradient(circle at 35% 30%,var(--chrome-1),var(--chrome-3));z-index:2}
   /* レバーを上の支点でキャリッジへ金属接続するマウント（宙に浮かせない） */
@@ -46,7 +46,7 @@
     border-radius:3px;box-shadow:0 2px 3px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.5)}
 
   /* 用紙解放レバー（紙の右端の右）：引くと回転 */
-  .release-btn{appearance:none;border:0;background:none;cursor:pointer;width:52px;height:34px;position:relative;flex:0 0 auto;margin-bottom:12px;transition:opacity .25s}
+  .release-btn{appearance:none;border:0;background:none;cursor:pointer;width:52px;height:34px;position:relative;flex:0 0 auto;margin-bottom:12px}  /* 解放時は即時に消す(トランジションなし) */
   .release-arm{position:absolute;left:7px;top:50%;width:38px;height:8px;border-radius:5px;
     background:linear-gradient(180deg,var(--chrome-1),var(--chrome-3));
     transform-origin:0 50%;transform:translateY(-50%) rotate(-8deg);
