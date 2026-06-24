@@ -8,6 +8,7 @@
     --fig:#a14638;
   }
   *{box-sizing:border-box;margin:0;padding:0}
+  .key,button,kbd{touch-action:manipulation}   /* タップで拡大ズーム遅延を起こさない（モバイル） */
   html,body{height:100%}
   body{
     background:radial-gradient(120% 100% at 50% 0%,#4a4540 0%,#2c2724 70%,#1d1a18 100%);
@@ -16,8 +17,10 @@
     min-height:100%;padding:16px 14px;gap:14px;-webkit-font-smoothing:antialiased;
   }
 
+  /* 狭い画面では機械全体を縮小して収める（用紙が画面外へ行かないように） */
+  .stage{width:100%;display:flex;justify-content:center;align-items:flex-start;overflow:hidden}
   .machine{
-    width:min(800px,100%);
+    width:min(800px,100%);flex:0 0 auto;transform-origin:top center;
     background:linear-gradient(180deg,var(--body-1),var(--body-2) 55%,var(--body-3));
     border-radius:22px 22px 18px 18px;
     box-shadow:0 30px 60px rgba(0,0,0,.5),inset 0 2px 0 rgba(255,255,255,.22),inset 0 -8px 18px rgba(0,0,0,.28);

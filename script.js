@@ -592,11 +592,31 @@
     fanIndex.clear();
     items.forEach((it, i) => fanIndex.set(it.c, i));
   }
-  function layoutAll() { layout(); positionCarriage(); layoutLid(); buildFanOrder(); switchRepos.forEach((f) => f()); }
+  // ---- fit the whole machine into narrow viewports (phones): lay it out at a comfortable width, then scale to fit ----
+  const stageEl = document.querySelector(".stage"), machineEl = document.querySelector(".machine");
+  const DESIGN_MIN = 600;                                  // below this the 62-col line can't shrink enough, so scale instead
+  function fitMachineWidth() { machineEl.style.width = (stageEl.clientWidth >= DESIGN_MIN) ? "" : DESIGN_MIN + "px"; }
+  function fitMachineScale() {
+    const avail = stageEl.clientWidth;
+    if (avail >= DESIGN_MIN) { machineEl.style.transform = ""; stageEl.style.height = ""; }
+    else { const s = avail / DESIGN_MIN; machineEl.style.transform = `scale(${s})`; stageEl.style.height = Math.ceil(machineEl.offsetHeight * s) + "px"; }
+  }
+  function layoutAll() { fitMachineWidth(); layout(); positionCarriage(); layoutLid(); buildFanOrder(); switchRepos.forEach((f) => f()); fitMachineScale(); }
+  // touch controls: the bottom-strip key hints double as buttons (phones have no physical Enter / Backspace / Esc)
+  document.querySelectorAll(".strip kbd").forEach((k) => {
+    k.style.cursor = "pointer";
+    k.addEventListener("click", () => {
+      if (!overlay.classList.contains("hide")) return;
+      const t = k.textContent.trim();
+      if (t === "Enter") { doLF(); doCR(); } else if (t === "Shift+Enter") doCR();
+      else if (t === "Ctrl+Enter") doLF(); else if (t === "Backspace") doBackspace();
+      else if (t === "Esc") toggleRelease();
+    });
+  });
   overlay.addEventListener("click", () => { overlay.classList.add("hide"); const c = ac(); if (c.resume) c.resume(); layoutAll(); updateStatus(); }, { once: true });
   let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(layoutAll, 120); });
-  // re-run layout whenever the machine actually gets/changes its size (preview viewport can settle late)
-  if (window.ResizeObserver) { const ro = new ResizeObserver(() => { clearTimeout(rt); rt = setTimeout(layoutAll, 60); }); ro.observe(document.querySelector(".machine")); }
+  // re-run layout only when the stage WIDTH changes (viewport can settle late; ignore our own height writes)
+  if (window.ResizeObserver) { let lastW = 0; const ro = new ResizeObserver((es) => { const w = Math.round(es[0].contentRect.width); if (w === lastW) return; lastW = w; clearTimeout(rt); rt = setTimeout(layoutAll, 60); }); ro.observe(stageEl); }
   layoutAll(); if (document.fonts && document.fonts.ready) document.fonts.ready.then(layoutAll);
   requestAnimationFrame(frame);
 })();
