@@ -77,7 +77,7 @@
     printLineY = BACK_H + ROLLER_MIN + 10 + (VIS_ROWS - 1) * ROWH + FS;   // front window sits below the platen roller
     platenTopY = printLineY + 4;
     pageH = printLineY + 18;                                              // room for the bail / descenders below the print line
-    setCanvasH(pageH);                    // canvas backing + ctx (grows when the released sheet needs > VIS_ROWS rows)
+    setCanvasH(released ? releasedHeight() : pageH);   // canvas backing + ctx (keep the released sheet's full height across resizes)
     deck.style.height = pageH + "px";
   }
   // size the paper canvas to height h (CSS px): normal view uses pageH, the released sheet grows to fit all rows
@@ -288,7 +288,7 @@
     const now = performance.now(), colT = colTarget, yT = rowTop[tw.caret.row] || 0;
     if (crAnim) {                                                     // carriage return: ease-out slide home over ~1s
       const p = Math.min(1, (now - crAnim.t0) / crAnim.dur);
-      caretVisCol = crAnim.from * Math.pow(1 - p, 2);
+      caretVisCol = crAnim.to + (crAnim.from - crAnim.to) * Math.pow(1 - p, 2);  // ease from start col to the left margin
     } else if (reduce) caretVisCol = colT;
     else { caretVisCol += (colT - caretVisCol) * 0.4; if (Math.abs(colT - caretVisCol) < 0.01) caretVisCol = colT; }
     if (reduce) { caretVisY = yT; relAmt = released ? 1 : 0; }
@@ -361,10 +361,11 @@
   function doCR() {
     if (busy) return;
     tw.carriageReturn(); stepGen++;
-    const dist = caretVisCol; colTarget = 0;
-    const dur = Math.min(1000, Math.round(1000 * dist / COLS));        // slide time ∝ distance; full width ≈ 1s
+    const home = tw.caret.col;                                         // = left margin after CR
+    const dist = caretVisCol - home; colTarget = home;
+    const dur = Math.min(1000, Math.round(1000 * Math.abs(dist) / COLS));  // slide time ∝ distance; full width ≈ 1s
     if (dur < 70) { updateStatus(); return; }                          // already near home (e.g. repeated Enter) → no slide, just LF
-    busy = true; crAnim = { from: dist, t0: performance.now(), dur };
+    busy = true; crAnim = { from: caretVisCol, to: home, t0: performance.now(), dur };
     sndCR(dur); swingLever(dur);
     setTimeout(() => { busy = false; crAnim = null; }, dur);
     updateStatus();
@@ -423,6 +424,7 @@
     if (codes.has(c) && !e.ctrlKey && !e.metaKey) { e.preventDefault(); pressVisual(c, true); emitChar(c); return; }
   });
   addEventListener("keyup", (e) => {
+    if (!overlay.classList.contains("hide")) return;   // not started yet — match the keydown guard
     const c = e.code;
     if (c === "ShiftLeft" || c === "ShiftRight") { physDown = false; syncShift(); sndShiftUp(); return; }
     pressVisual(c, false);
@@ -451,14 +453,15 @@
     for (const s of stamps) if (s.row > mr) mr = s.row;
     return rowTop[mr] || 0;
   }
+  // height the released sheet needs so every typed row shows (grows beyond VIS_ROWS)
+  function releasedHeight() { return Math.max(pageH, Math.round((FS + 10) + contentBottom() + FS + 12)); }
   function toggleRelease() {
     released = !released;
     releaseEl.classList.toggle("pulled", released);
     releaseEl.setAttribute("aria-pressed", String(released));
     document.body.classList.toggle("released", released);
     if (released) {                                                      // present the sheet centred on the screen
-      const need = Math.round((FS + 10) + contentBottom() + FS + 12);    // grow to fit all rows (beyond VIS_ROWS)
-      setCanvasH(Math.max(pageH, need));
+      setCanvasH(releasedHeight());
       sheetView.appendChild(paperFrame);
       sheetView.classList.remove("hide");
     } else {                                                            // put it back into the machine
@@ -479,7 +482,11 @@
     const knob = el.querySelector(".lh-knob");
     const repos = () => { const a = el.querySelector(".lh.active"); if (a && a.offsetParent) knob.style.top = a.offsetTop + "px"; };
     const pick = (val, click) => {
-      el.querySelectorAll(".lh").forEach((b) => b.classList.toggle("active", b.dataset[key] === String(val)));
+      el.querySelectorAll(".lh").forEach((b) => {
+        const on = b.dataset[key] === String(val);
+        b.classList.toggle("active", on);
+        b.setAttribute("aria-pressed", String(on));   // expose the selected detent to assistive tech
+      });
       repos(); onPick(val); if (click) sndSwitch();   // "pachi" detent click on a flip
     };
     el.querySelectorAll(".lh").forEach((b) => b.addEventListener("click", () => pick(b.dataset[key], true)));
